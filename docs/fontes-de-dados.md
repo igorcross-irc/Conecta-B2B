@@ -55,3 +55,20 @@ Os pontos abaixo vêm de blogs, não de texto jurídico. Antes de lançar, valid
 - Testar 2 ou 3 provedores (Apollo, People Data Labs, FullEnrich) com 50 empresas brasileiras e medir taxa de acerto e custo por contato útil.
 - Baixar a base aberta de CNPJ e medir o que cobre.
 - Definir o texto de base legal e o fluxo de opt-out com advogado.
+
+## 8. Endereços para cadastro e download (21/10/2026)
+Provedores de contatos (sites oficiais; confirmar planos e limites do plano grátis em cada um):
+- Apollo: https://www.apollo.io (documentação: https://docs.apollo.io)
+- People Data Labs: https://www.peopledatalabs.com (painel: https://support.peopledatalabs.com/hc/en-us/articles/30096408039195-API-Dashboard-Quickstart)
+- FullEnrich: https://fullenrich.com (documentação: https://docs.fullenrich.com)
+- Lusha: https://www.lusha.com
+- Hunter: https://hunter.io
+- RocketReach: https://rocketreach.co
+
+Base de CNPJ e APIs:
+- Base completa da Receita Federal, publicada todo mês: https://dadosabertos.rfb.gov.br/CNPJ/dados_abertos_cnpj/ (arquivos em subpastas AAAA-MM). Página do conjunto de dados: https://dados.gov.br/dados/conjuntos-dados/cadastro-nacional-da-pessoa-juridica---cnpj. O endereço de download já mudou antes, então se não abrir, procurar pela página do conjunto de dados.
+- CNPJá, API aberta: `GET https://open.cnpja.com/office/{cnpj}` (CNPJ sem pontuação). Sem cadastro, 5 consultas por minuto por IP; traz dados da Receita, Simples/MEI, SUFRAMA, contatos, CNAEs e sócios; garante atualização em até 45 dias para ativos. Documentação: https://cnpja.com/api/open
+- CNPJ-API: https://docs.cnpj-api.com/en/introducao (token grátis com limite)
+- BrasilAPI e ReceitaWS: existem, mas não consegui ler os termos e limites (a BrasilAPI bloqueia leitura automatizada).
+
+Cuidados no cadastro: ler os termos de uso comercial de cada plano grátis antes de usar em produto; não colocar chaves de API no repositório nem no chat.
