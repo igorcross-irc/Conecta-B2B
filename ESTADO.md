@@ -16,10 +16,11 @@ Criar um sistema igual ao ConnectLeads. Projeto independente: não tem relação
 - Comparativo com o módulo "Contatos de marketing" do SPYADS (docs/comparativo-spyads-connectleads.md), usado só como referência funcional.
 - Pesquisa de concorrentes e referências (docs/pesquisa-concorrentes.md). Falta a parte de dados de empresas no Brasil (Econodata, Speedio, Casa dos Dados).
 - Pesquisa de fontes de dados para contatos e empresas (docs/fontes-de-dados.md): base de CNPJ, provedores com API, risco do LinkedIn e LGPD.
+- Classificação de fontes em gratuito, pago e IA, conta por contato e roteiro do teste de provedores (docs/custos-e-roteiro-de-teste.md).
 
 ## Falta
 - Navegar pelas telas internas que o vídeo não mostra: Importações, Equipe, Configurações, /admin e modais. Exige sessão nova do Claude ou modo de permissão manual.
-- Testar 2 ou 3 provedores de contatos com empresas brasileiras reais e baixar a base aberta de CNPJ (ver docs/fontes-de-dados.md).
+- Executar o teste de provedores (roteiro em docs/custos-e-roteiro-de-teste.md): falta definir as 50 empresas e o verificador de e-mail. Baixar a base aberta de CNPJ (ver docs/fontes-de-dados.md).
 - Validar base legal e opt-out com advogado.
 - Escolher stack e começar o código.
 
