@@ -17,6 +17,7 @@ Criar um sistema igual ao ConnectLeads. Projeto independente: não tem relação
 - Pesquisa de concorrentes e referências (docs/pesquisa-concorrentes.md). Falta a parte de dados de empresas no Brasil (Econodata, Speedio, Casa dos Dados).
 - Pesquisa de fontes de dados para contatos e empresas (docs/fontes-de-dados.md): base de CNPJ, provedores com API, risco do LinkedIn e LGPD.
 - Classificação de fontes em gratuito, pago e IA, conta por contato e roteiro do teste de provedores (docs/custos-e-roteiro-de-teste.md).
+- Piloto de alimentos com 5 empresas e fontes gratuitas (docs/piloto-alimentos.md): nomes e cargos de grandes empresas aparecem na imprensa; e-mail e telefone não; dados de pequenas empresas, não.
 
 ## Falta
 - Navegar pelas telas internas que o vídeo não mostra: Importações, Equipe, Configurações, /admin e modais. Exige sessão nova do Claude ou modo de permissão manual.
