@@ -12,6 +12,7 @@ Criar um sistema igual ao ConnectLeads. Projeto independente: não tem relação
 - Stack provável identificada: SPA React, Lovable, Supabase.
 
 - Comparativo com o módulo "Contatos de marketing" do SPYADS (docs/comparativo-spyads-connectleads.md), usado só como referência funcional.
+- Pesquisa de concorrentes e referências (docs/pesquisa-concorrentes.md). Falta a parte de dados de empresas no Brasil (Econodata, Speedio, Casa dos Dados).
 
 ## Falta
 - Navegar pelas telas internas que o vídeo não mostra: Importações, Equipe, Configurações, /admin e modais. Exige sessão nova do Claude ou modo de permissão manual.
