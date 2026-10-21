@@ -1,4 +1,4 @@
-import type { PGlite } from "@electric-sql/pglite";
+import type { Db } from "@/db/conexao";
 import { buscarEmCascata } from "./cascade";
 import { TABELA_CUSTOS_PADRAO, type Lancamento, type TabelaCustos } from "./credits";
 import { cnpjValido, somenteDigitos } from "./cnpj";
@@ -19,7 +19,7 @@ export interface ListaPg {
 }
 
 interface Dependencias {
-  db: PGlite;
+  db: Db;
   empresa: ProvedorEmpresa;
   contatos: ProvedorContatos[];
   org?: string;

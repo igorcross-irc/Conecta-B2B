@@ -1,17 +1,17 @@
-import { abrirBancoLocal } from "@/db/local";
+import { abrirBanco } from "@/db/conexao";
 import { CnpjaAberta } from "./providers/cnpja";
 import { EmpresaDemo, ProvedorDemo } from "./providers/mock";
 import { criarServicosPg, type ServicosPg } from "./servicosPg";
 import { ErroDeNegocio } from "./servicos";
 
 /**
- * Instância única de serviços do processo, sobre o banco local (Postgres embutido, pasta .dados).
+ * Instância única de serviços do processo, sobre Postgres: DATABASE_URL (Neon) quando definida, senão o banco local embutido (pasta .dados).
  * Há uma só organização de demonstração. Será trocado pelo Supabase quando houver autenticação.
  */
 const g = globalThis as unknown as { __conectaServicos?: Promise<ServicosPg> };
 
 export function servicos(): Promise<ServicosPg> {
-  g.__conectaServicos ??= abrirBancoLocal().then((db) =>
+  g.__conectaServicos ??= abrirBanco().then((db) =>
     criarServicosPg({
       db,
       empresa: process.env.CONECTA_MODO_DEMO === "1" ? new EmpresaDemo() : new CnpjaAberta(),

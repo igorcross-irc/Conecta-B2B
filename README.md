@@ -37,6 +37,7 @@ Abra http://localhost:3000. Telas: Descobrir (busca por CNPJ, decisores, revela�
 - Esquema do banco (Supabase/Postgres) com segurança por linha, funções de cobrança e revelação, testado em Postgres embutido.
 
 ## O que ainda é provisório
-- Os dados ficam num Postgres local embutido (PGlite, pasta `.dados`, ignorada pelo git), que roda a mesma migração do Supabase. Há uma só organização de demonstração e a aplicação roda como superusuário (a segurança por linha só vale com Supabase). Falta ligar ao Supabase (autenticação, organizações, papéis).
+- Com `DATABASE_URL` definida em `.env.local` (Neon ou outro Postgres), o app usa esse banco; sem ela, usa o Postgres local embutido. Na primeira conexão ele cria o usuário, a organização e os 20 créditos de demonstração (idempotente). Para usar o Neon: aplique `db/neon/0001_neon.sql` (já aplicado no projeto "Conecta B2B"), copie a URL do botão Connect do painel para `.env.local` e rode `npm run dev`.
+- Os dados ficam, sem `DATABASE_URL`, num Postgres local embutido (PGlite, pasta `.dados`, ignorada pelo git), que roda a mesma migração do Supabase. Há uma só organização de demonstração e a aplicação roda como superusuário (a segurança por linha só vale com Supabase). Falta ligar ao Supabase (autenticação, organizações, papéis).
 - Os decisores vêm de um provedor de demonstração. Falta integrar provedores reais (ver `docs/custos-e-roteiro-de-teste.md`).
 - Sem login, painel da operadora, importação, sinais de compra nem configuração por tenant (esquema SQL já prevê).
