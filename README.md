@@ -2,7 +2,7 @@
 
 Sistema de prospecção B2B inspirado no ConnectLeads (Connectmix, lead.connectmix.com): cruza anúncios detectados em rádio com enriquecimento de empresas e decisores, cobrado por créditos.
 
-Projeto de Igor Cruz (Sistema Globo de Rádio). Trabalho feito em conversas com o Claude, no projeto "Leads".
+Projeto de Igor Cruz. Trabalho feito em conversas com o Claude, no projeto "Leads".
 
 ## Onde está cada coisa
 
