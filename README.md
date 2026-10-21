@@ -37,6 +37,6 @@ Abra http://localhost:3000. Telas: Descobrir (busca por CNPJ, decisores, revela�
 - Esquema do banco (Supabase/Postgres) com segurança por linha, funções de cobrança e revelação, testado em Postgres embutido.
 
 ## O que ainda é provisório
-- O estado da aplicação fica em memória e há uma só organização de demonstração. Falta ligar ao Supabase (autenticação, organizações, papéis).
+- Os dados ficam num Postgres local embutido (PGlite, pasta `.dados`, ignorada pelo git), que roda a mesma migração do Supabase. Há uma só organização de demonstração e a aplicação roda como superusuário (a segurança por linha só vale com Supabase). Falta ligar ao Supabase (autenticação, organizações, papéis).
 - Os decisores vêm de um provedor de demonstração. Falta integrar provedores reais (ver `docs/custos-e-roteiro-de-teste.md`).
 - Sem login, painel da operadora, importação, sinais de compra nem configuração por tenant (esquema SQL já prevê).

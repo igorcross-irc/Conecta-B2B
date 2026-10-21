@@ -4,7 +4,7 @@ import { responderErro, servicos } from "@/lib/app";
 export async function GET(req: Request) {
   try {
     const cnpj = new URL(req.url).searchParams.get("cnpj") ?? "";
-    return Response.json(await servicos().consultarEmpresa(cnpj));
+    return Response.json(await (await servicos()).consultarEmpresa(cnpj));
   } catch (e) {
     return responderErro(e);
   }

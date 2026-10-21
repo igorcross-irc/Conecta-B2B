@@ -1,25 +1,24 @@
-import { Razao } from "./credits";
+import { abrirBancoLocal } from "@/db/local";
 import { CnpjaAberta } from "./providers/cnpja";
 import { EmpresaDemo, ProvedorDemo } from "./providers/mock";
-import { criarServicos, ErroDeNegocio, type Servicos } from "./servicos";
+import { criarServicosPg, type ServicosPg } from "./servicosPg";
+import { ErroDeNegocio } from "./servicos";
 
 /**
- * Instância única de serviços do processo.
- * ATENÇÃO: o estado fica em memória (some ao reiniciar) e há uma só organização de demonstração.
- * Será trocado pelo Supabase (ver supabase/migrations) quando houver autenticação e multi-tenant.
+ * Instância única de serviços do processo, sobre o banco local (Postgres embutido, pasta .dados).
+ * Há uma só organização de demonstração. Será trocado pelo Supabase quando houver autenticação.
  */
-const globalComServicos = globalThis as unknown as { __conectaServicos?: Servicos };
+const g = globalThis as unknown as { __conectaServicos?: Promise<ServicosPg> };
 
-export function servicos(): Servicos {
-  if (!globalComServicos.__conectaServicos) {
-    globalComServicos.__conectaServicos = criarServicos({
-      empresa:
-        process.env.CONECTA_MODO_DEMO === "1" ? new EmpresaDemo() : new CnpjaAberta(),
+export function servicos(): Promise<ServicosPg> {
+  g.__conectaServicos ??= abrirBancoLocal().then((db) =>
+    criarServicosPg({
+      db,
+      empresa: process.env.CONECTA_MODO_DEMO === "1" ? new EmpresaDemo() : new CnpjaAberta(),
       contatos: [new ProvedorDemo()],
-      razao: new Razao(20),
-    });
-  }
-  return globalComServicos.__conectaServicos;
+    }),
+  );
+  return g.__conectaServicos;
 }
 
 /** Converte erros de negócio em resposta JSON com o status certo. */

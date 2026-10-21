@@ -12,8 +12,8 @@ const ROTULO: Record<string, string> = {
 
 async function Conteudo() {
   await connection(); // lê estado do servidor a cada requisição
-  const s = servicos();
-  const extrato = s.extrato();
+  const s = await servicos();
+  const extrato = await s.extrato();
   const custos = s.custos();
   return (
     <div className="space-y-6">
@@ -21,7 +21,7 @@ async function Conteudo() {
       <section className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <p className="text-sm text-slate-500">Saldo disponível</p>
-          <p className="text-4xl font-semibold text-indigo-700">{s.saldo()}</p>
+          <p className="text-4xl font-semibold text-indigo-700">{await s.saldo()}</p>
           <p className="mt-1 text-xs text-slate-500">
             Conta de demonstração. Os créditos não expiram.
           </p>

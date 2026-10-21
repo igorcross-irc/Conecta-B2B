@@ -2,9 +2,12 @@ import { responderErro, servicos } from "@/lib/app";
 
 /** GET /api/listas */
 export async function GET() {
-  const s = servicos();
+  const s = await servicos();
+  const listas = await s.listas();
   return Response.json(
-    s.listas().map((l) => ({ ...l, contatos: s.contatosDaLista(l.id) })),
+    await Promise.all(
+      listas.map(async (l) => ({ ...l, contatos: await s.contatosDaLista(l.id) })),
+    ),
   );
 }
 
@@ -19,11 +22,11 @@ export async function POST(req: Request) {
       listaId?: string;
       contatoIds?: string[];
     };
-    const s = servicos();
+    const s = await servicos();
     if (corpo.listaId) {
-      return Response.json(s.adicionarALista(corpo.listaId, corpo.contatoIds ?? []));
+      return Response.json(await s.adicionarALista(corpo.listaId, corpo.contatoIds ?? []));
     }
-    return Response.json(s.criarLista(corpo.nome ?? ""));
+    return Response.json(await s.criarLista(corpo.nome ?? ""));
   } catch (e) {
     return responderErro(e);
   }
