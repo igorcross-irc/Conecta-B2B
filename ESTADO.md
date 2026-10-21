@@ -3,7 +3,7 @@
 Atualizado em 21/10/2026.
 
 ## Objetivo
-Criar um sistema igual ao ConnectLeads. Referências: site lead.connectmix.com, vídeo "ConnectLeads - Sistema Globo de Rádio" e o levantamento do site (arquivo no projeto "Leads" do Claude).
+Criar um sistema igual ao ConnectLeads. Projeto independente: não tem relação com o trabalho do Igor nem com empresa dele. A inspiração vem de um vídeo de demonstração que foi compartilhado e de informação pública do site lead.connectmix.com. Referências: o site, o vídeo e o levantamento do site (arquivo no projeto "Leads" do Claude).
 
 ## Feito
 - Especificação funcional do app logado, a partir de 120 quadros do vídeo.

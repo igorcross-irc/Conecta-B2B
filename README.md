@@ -2,7 +2,7 @@
 
 Sistema de prospecção B2B inspirado no ConnectLeads (Connectmix, lead.connectmix.com): cruza anúncios detectados em rádio com enriquecimento de empresas e decisores, cobrado por créditos.
 
-Projeto de Igor Cruz. Trabalho feito em conversas com o Claude, no projeto "Leads".
+Projeto pessoal de Igor Cruz, independente de qualquer empresa ou do trabalho dele. A inspiração vem de material de demonstração do ConnectLeads que foi compartilhado e de informações públicas do site. Trabalho feito em conversas com o Claude, no projeto "Leads".
 
 ## Onde está cada coisa
 

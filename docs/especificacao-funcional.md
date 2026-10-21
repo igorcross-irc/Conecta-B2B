@@ -227,7 +227,7 @@ O arquivo "ConnectLeads_levantamento" do projeto cobre o lado público (landing,
 
 ## O que o áudio do vídeo acrescenta
 
-Narração de Felipe Rosa, diretor da ConnectMix, apresentando a ferramenta ao Sistema Globo de Rádio (cerca de 8 minutos). Só os pontos novos ou que confirmam regras do produto:
+Narração de Felipe Rosa, diretor da ConnectMix, apresentando a ferramenta a um cliente em potencial (cerca de 8 minutos). Só os pontos novos ou que confirmam regras do produto:
 
 - **Posicionamento:** ferramenta de "prospecção e enriquecimento de dados"; o painel mostra "como funciona a coleta de dados".
 - **Empresas & Contas B2B:** setor, atividade, localização e porte; busca geral, independente de a empresa atuar com rádio ou TV. Exemplo: marketing em Brasília com mais de 50 funcionários retorna cerca de 20 a 25 empresas por busca, e é possível trazer mais.
@@ -238,7 +238,7 @@ Narração de Felipe Rosa, diretor da ConnectMix, apresentando a ferramenta ao S
 - **Contatos:** por empresa (ex.: gerente de marketing) com e-mail e telefone; os demais ficam atrás de "revelar e-mail" e "revelar telefone". O perfil da pessoa traz foto e dados do LinkedIn, e-mail profissional e pessoal e telefone.
 - **Fontes:** "mais de 30 plataformas" para enriquecer os dados (LinkedIn é uma delas).
 - **Listas:** criadas por praça (praça A, B, C etc.), com empresas e contatos dentro de cada uma.
-- **Regras comerciais:** sem limite de usuários (todos do Sistema Globo podem usar a mesma plataforma); créditos contratados dentro da plataforma, **não expiram**, com recarga mensal, semestral ou anual à escolha.
+- **Regras comerciais:** sem limite de usuários (todos os usuários da empresa cliente podem usar a mesma plataforma); créditos contratados dentro da plataforma, **não expiram**, com recarga mensal, semestral ou anual à escolha.
 - **Fecho:** convite para reunião estratégica sobre enriquecer os dados de quem toca no concorrente e a base de contatos do time comercial.
 
 Observação: a fala diz que o contato pessoal (e-mail pessoal) pode vir no perfil, o que não aparece na copy de LGPD do site (só contato profissional); vale decidir isso no seu sistema.
