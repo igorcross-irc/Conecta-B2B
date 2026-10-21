@@ -101,6 +101,44 @@ describe("serviços em Postgres local", () => {
     expect(await intruso.saldo()).toBe(10);
   });
 
+  it("importa CSV próprio sem cobrar, já revelado, e relata erros", async () => {
+    const csv = [
+      "CNPJ;Nome;Cargo;E-mail;Telefone",
+      "33.000.167/0001-01;Ana Souza;Diretora Comercial;ana@cliente.com.br;(21) 98888-7777",
+      "123;Sem Cnpj;Gerente;x@y.com;",
+      "33000167000101;Bruno;;b@c.com;",
+      "33000167000101;Carla;Compras;nao-e-email;",
+      "33000167000101;Diego;Marketing;diego@cliente.com.br;",
+    ].join("\n");
+    await ctx.s.registrarOptOut("diego@cliente.com.br");
+    const r = await ctx.s.importarContatos(csv);
+    expect(r).toMatchObject({ importados: 1, ignorados: 1 });
+    expect(r.erros).toHaveLength(3);
+    expect(await ctx.s.saldo()).toBe(20);
+    const lista = await ctx.s.criarLista("Meus");
+    const ids = (await ctx.db.query<{ id: string }>("select id from contato")).rows.map((x) => x.id);
+    await ctx.s.adicionarALista(lista.id, ids);
+    expect(await ctx.s.exportarCsv(lista.id)).toContain("ana@cliente.com.br");
+    await expect(ctx.s.importarContatos("a,b\n1,2")).rejects.toThrow(/colunas obrigatórias/);
+  });
+
+  it("opt-out apaga e-mail e telefone já guardados", async () => {
+    await busca(ctx.s, ["comercial"], "o1");
+    const r = await ctx.s.registrarOptOut("Pessoa.A@exemplo.com.br");
+    expect(r.contatosAfetados).toBe(1);
+    const d = await ctx.db.query<{ email: string | null }>("select email from contato_dado where email is not null and lower(email) = 'pessoa.a@exemplo.com.br'");
+    expect(d.rows).toHaveLength(0);
+    await expect(ctx.s.registrarOptOut("invalido")).rejects.toThrow("E-mail inválido.");
+  });
+
+  it("registra e lista sinais por CNPJ", async () => {
+    await ctx.s.registrarSinal({ cnpj: "33000167000101", tipo: "anuncio_radio", fonte: "monitor X", ocorridoEm: "2026-10-01T12:00:00Z", conteudo: { emissora: "Rádio Y" } });
+    const sinais = await ctx.s.sinaisDoCnpj("33.000.167/0001-01");
+    expect(sinais).toHaveLength(1);
+    expect(sinais[0]).toMatchObject({ tipo: "anuncio_radio", fonte: "monitor X" });
+    await expect(ctx.s.registrarSinal({ cnpj: "1", tipo: "a", fonte: "b", ocorridoEm: "2026-01-01" })).rejects.toThrow("CNPJ inválido.");
+  });
+
   it("os dados persistem ao reabrir a mesma pasta", async () => {
     const { mkdtempSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");

@@ -52,6 +52,13 @@ async function chamar<T>(url: string, corpo?: unknown): Promise<T> {
   return dados as T;
 }
 
+interface Sinal {
+  id: string;
+  tipo: string;
+  fonte: string;
+  ocorridoEm: string;
+}
+
 export default function Descobrir() {
   const [cnpj, setCnpj] = useState("");
   const [cargos, setCargos] = useState("comercial, marketing");
@@ -62,6 +69,7 @@ export default function Descobrir() {
   const [ocupado, setOcupado] = useState(false);
   const [listaNome, setListaNome] = useState("");
   const [aviso, setAviso] = useState("");
+  const [sinais, setSinais] = useState<Sinal[]>([]);
 
   async function executar(fn: () => Promise<void>) {
     setErro("");
@@ -81,6 +89,7 @@ export default function Descobrir() {
     setContatos([]);
     void executar(async () => {
       setEmpresa(await chamar<Empresa>(`/api/empresa?cnpj=${encodeURIComponent(cnpj)}`));
+      setSinais(await chamar<Sinal[]>(`/api/sinais?cnpj=${encodeURIComponent(cnpj)}`));
     });
   };
 
@@ -155,6 +164,18 @@ export default function Descobrir() {
             <div className="sm:col-span-2"><dt className="text-slate-500">Atividade</dt><dd>{empresa.cnaePrincipal?.descricao ?? "—"}</dd></div>
             <div><dt className="text-slate-500">Domínio</dt><dd>{empresa.dominio ?? "—"}</dd></div>
           </dl>
+          {sinais.length > 0 && (
+            <div className="text-sm">
+              <p className="mb-1 text-slate-500">Sinais de compra</p>
+              <ul className="space-y-1">
+                {sinais.map((s) => (
+                  <li key={s.id}>
+                    {s.tipo} · {s.fonte} · {new Date(s.ocorridoEm).toLocaleDateString("pt-BR")}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <p className="text-xs text-slate-500">
             Fonte: {empresa.fonte}, em {new Date(empresa.obtidoEm).toLocaleString("pt-BR")}.
           </p>

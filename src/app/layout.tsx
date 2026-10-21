@@ -10,6 +10,7 @@ export const metadata: Metadata = {
 const MENU = [
   { href: "/descobrir", rotulo: "Descobrir" },
   { href: "/listas", rotulo: "Listas" },
+  { href: "/importar", rotulo: "Importar" },
   { href: "/creditos", rotulo: "Créditos" },
 ];
 
@@ -31,6 +32,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 {m.rotulo}
               </Link>
             ))}
+            <Link href="/optout" className="mt-auto px-3 py-2 text-xs text-slate-500 hover:underline">
+              Opt-out (LGPD)
+            </Link>
           </nav>
           <main className="flex-1 p-4 md:p-8">{children}</main>
         </div>

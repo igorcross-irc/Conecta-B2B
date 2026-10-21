@@ -2,6 +2,7 @@ import type { Db } from "@/db/conexao";
 import { buscarEmCascata } from "./cascade";
 import { TABELA_CUSTOS_PADRAO, type Lancamento, type TabelaCustos } from "./credits";
 import { cnpjValido, somenteDigitos } from "./cnpj";
+import { lerCsv, normalizarCabecalho } from "./csv";
 import { ORG_DEMO } from "@/db/local";
 import type { Contato, Empresa, ProvedorContatos, ProvedorEmpresa } from "./providers/types";
 import {
@@ -258,10 +259,128 @@ export function criarServicosPg({
       return ["Nome,Cargo,E-mail,Telefone,LinkedIn,Origem", ...linhas].join("\n");
     },
 
-    async registrarOptOut(email: string): Promise<void> {
+    /**
+     * Opt-out global: o e-mail não volta em buscas futuras e os dados já guardados são apagados
+     * (e-mail e telefone do contato em todas as organizações).
+     */
+    async registrarOptOut(email: string): Promise<{ contatosAfetados: number }> {
       const e = email.trim().toLowerCase();
-      if (!e.includes("@")) throw new ErroDeNegocio("E-mail inválido.");
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new ErroDeNegocio("E-mail inválido.");
       await db.query("insert into opt_out (email) values ($1) on conflict do nothing", [e]);
+      const r = await db.query<{ contato_id: string }>(
+        "update contato_dado set email = null, telefone = null where lower(email) = $1 returning contato_id",
+        [e],
+      );
+      if (r.rows.length > 0) {
+        await db.query(
+          "update contato set tem_email = false, tem_telefone = false where id = any($1::uuid[])",
+          [r.rows.map((x) => x.contato_id)],
+        );
+      }
+      return { contatosAfetados: r.rows.length };
+    },
+
+    /**
+     * Importa contatos do próprio cliente por CSV. Colunas: cnpj, nome, cargo (obrigatórias);
+     * email, telefone, linkedin (opcionais). Não cobra créditos: o dado é do próprio cliente,
+     * então já entra revelado. Respeita o opt-out.
+     */
+    async importarContatos(texto: string): Promise<{ importados: number; ignorados: number; erros: string[] }> {
+      const linhas = lerCsv(texto);
+      if (linhas.length < 2) throw new ErroDeNegocio("O arquivo precisa de cabeçalho e ao menos uma linha.");
+      if (linhas.length > 5001) throw new ErroDeNegocio("Limite de 5.000 linhas por importação.");
+      const idx = new Map(linhas[0].map((h, i) => [normalizarCabecalho(h), i]));
+      const col = (...nomes: string[]) => nomes.map((n) => idx.get(n)).find((i) => i !== undefined);
+      const iCnpj = col("cnpj");
+      const iNome = col("nome", "contato");
+      const iCargo = col("cargo");
+      if (iCnpj === undefined || iNome === undefined || iCargo === undefined) {
+        throw new ErroDeNegocio("Faltam colunas obrigatórias: cnpj, nome e cargo.");
+      }
+      const iEmail = col("email", "emailcorporativo");
+      const iTel = col("telefone", "celular", "fone");
+      const iLink = col("linkedin", "linkedinurl");
+      const saiu = new Set(
+        (await db.query<{ email: string }>("select email from opt_out")).rows.map((r) => r.email),
+      );
+      const erros: string[] = [];
+      let importados = 0;
+      let ignorados = 0;
+      for (let n = 1; n < linhas.length; n++) {
+        const l = linhas[n];
+        const v = (i?: number) => (i === undefined ? "" : (l[i] ?? "").trim());
+        const cnpj = somenteDigitos(v(iCnpj));
+        if (!cnpjValido(cnpj)) {
+          erros.push(`Linha ${n + 1}: CNPJ inválido.`);
+          continue;
+        }
+        if (!v(iNome) || !v(iCargo)) {
+          erros.push(`Linha ${n + 1}: nome e cargo são obrigatórios.`);
+          continue;
+        }
+        const email = v(iEmail).toLowerCase() || null;
+        if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+          erros.push(`Linha ${n + 1}: e-mail inválido.`);
+          continue;
+        }
+        if (email && saiu.has(email)) {
+          ignorados++;
+          continue;
+        }
+        const tel = v(iTel) || null;
+        const r = await um<{ id: string }>(
+          `insert into contato (organizacao_id, cnpj, nome, cargo, linkedin_url, tem_email, tem_telefone,
+             email_revelado, telefone_revelado, email_status, origem, obtido_em, confianca)
+           values ($1,$2,$3,$4,$5,$6,$7,$6,$7,$8,'importação própria',now(),0.7)
+           on conflict (organizacao_id, cnpj, nome, cargo) do update set nome = excluded.nome
+           returning id`,
+          [org, cnpj, v(iNome), v(iCargo), v(iLink) || null, Boolean(email), Boolean(tel), email ? "nao_verificado" : null],
+        );
+        await db.query(
+          `insert into contato_dado (contato_id, email, telefone) values ($1,$2,$3)
+           on conflict (contato_id) do update set email = coalesce(excluded.email, contato_dado.email),
+             telefone = coalesce(excluded.telefone, contato_dado.telefone)`,
+          [r!.id, email, tel],
+        );
+        await db.query(
+          `update contato set tem_email = tem_email or $2, tem_telefone = tem_telefone or $3,
+             email_revelado = email_revelado or $2, telefone_revelado = telefone_revelado or $3 where id = $1`,
+          [r!.id, Boolean(email), Boolean(tel)],
+        );
+        importados++;
+      }
+      return { importados, ignorados, erros: erros.slice(0, 50) };
+    },
+
+    /** Sinal de compra genérico (rádio, vaga aberta, licitação, notícia etc.), sempre com fonte e data. */
+    async registrarSinal(p: { cnpj: string; tipo: string; fonte: string; ocorridoEm: string; conteudo?: unknown }) {
+      if (!cnpjValido(p.cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      if (!p.tipo.trim() || !p.fonte.trim()) throw new ErroDeNegocio("Informe o tipo e a fonte do sinal.");
+      const quando = new Date(p.ocorridoEm);
+      if (Number.isNaN(quando.getTime())) throw new ErroDeNegocio("Data do sinal inválida.");
+      const r = await um<{ id: string }>(
+        `insert into sinal (organizacao_id, tipo, fonte, cnpj, ocorrido_em, conteudo)
+         values ($1,$2,$3,$4,$5,$6) returning id`,
+        [org, p.tipo.trim(), p.fonte.trim(), somenteDigitos(p.cnpj), quando.toISOString(), JSON.stringify(p.conteudo ?? {})],
+      );
+      return { id: r!.id };
+    },
+
+    async sinaisDoCnpj(cnpj: string) {
+      if (!cnpjValido(cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      const r = await db.query<Linha>(
+        `select id, tipo, fonte, ocorrido_em, conteudo from sinal
+          where cnpj = $1 and (organizacao_id is null or organizacao_id = $2)
+          order by ocorrido_em desc limit 100`,
+        [somenteDigitos(cnpj), org],
+      );
+      return r.rows.map((x) => ({
+        id: x.id as string,
+        tipo: x.tipo as string,
+        fonte: x.fonte as string,
+        ocorridoEm: new Date(x.ocorrido_em as string).toISOString(),
+        conteudo: x.conteudo,
+      }));
     },
   };
   return servicos;
