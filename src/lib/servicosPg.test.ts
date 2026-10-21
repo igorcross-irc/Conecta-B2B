@@ -81,6 +81,26 @@ describe("serviços em Postgres local", () => {
     expect(r.contatos.find((c) => c.nome === "Pessoa Exemplo A")).toBeUndefined();
   });
 
+  it("usa os custos configurados no tenant", async () => {
+    await ctx.db.query(
+      `update config_tenant set custos = '{"busca_decisores":3,"revelar_email":2}'::jsonb`,
+    );
+    expect(await ctx.s.custos()).toEqual({ busca_decisores: 3, revelar_email: 2, revelar_telefone: 5 });
+    const r = await busca(ctx.s, ["comercial"], "t1");
+    expect(r.saldo).toBe(17);
+    const rev = await ctx.s.revelar({ contatoId: r.contatos[0].id, campo: "email" });
+    expect(rev.saldo).toBe(15);
+  });
+
+  it("organização sem vínculo com o usuário não consegue cobrar", async () => {
+    const outra = "00000000-0000-0000-0000-0000000000e0";
+    await ctx.db.query("insert into organizacao (id, nome) values ($1, 'Outra')", [outra]);
+    await ctx.db.query("insert into credito_lancamento (organizacao_id, operacao, valor, saldo_apos, descricao) values ($1,'recarga',10,10,'x')", [outra]);
+    const intruso = criarServicosPg({ db: ctx.db, empresa: provedorEmpresa, contatos: [new ProvedorDemo()], org: outra });
+    await expect(busca(intruso, [], "i1")).rejects.toMatchObject({ status: 403 });
+    expect(await intruso.saldo()).toBe(10);
+  });
+
   it("os dados persistem ao reabrir a mesma pasta", async () => {
     const { mkdtempSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");

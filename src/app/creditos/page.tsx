@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { headers } from "next/headers";
 import { connection } from "next/server";
 import { servicos } from "@/lib/app";
 
@@ -12,9 +13,9 @@ const ROTULO: Record<string, string> = {
 
 async function Conteudo() {
   await connection(); // lê estado do servidor a cada requisição
-  const s = await servicos();
+  const s = await servicos(await headers());
   const extrato = await s.extrato();
-  const custos = s.custos();
+  const custos = await s.custos();
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Créditos</h1>

@@ -8,7 +8,7 @@ export async function POST(req: Request) {
       return Response.json({ erro: "Campo deve ser email ou telefone." }, { status: 400 });
     }
     return Response.json(
-      await (await servicos()).revelar({ contatoId: corpo.contatoId ?? "", campo: corpo.campo }),
+      await (await servicos(req.headers)).revelar({ contatoId: corpo.contatoId ?? "", campo: corpo.campo }),
     );
   } catch (e) {
     return responderErro(e);

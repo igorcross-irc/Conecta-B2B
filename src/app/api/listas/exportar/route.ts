@@ -4,7 +4,7 @@ import { responderErro, servicos } from "@/lib/app";
 export async function GET(req: Request) {
   try {
     const listaId = new URL(req.url).searchParams.get("listaId") ?? "";
-    const csv = await (await servicos()).exportarCsv(listaId);
+    const csv = await (await servicos(req.headers)).exportarCsv(listaId);
     return new Response(csv, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",

@@ -35,7 +35,8 @@ function traduzir(e: unknown): never {
   if (/saldo insuficiente/.test(msg)) throw new ErroDeNegocio("Saldo de créditos insuficiente.", 402);
   if (/dado inexistente/.test(msg))
     throw new ErroDeNegocio("Este contato não tem esse dado. Nada foi cobrado.", 404);
-  if (/não encontrado|sem acesso/.test(msg)) throw new ErroDeNegocio("Contato não encontrado.", 404);
+  if (/sem acesso/.test(msg)) throw new ErroDeNegocio("Sem acesso a esta organização.", 403);
+  if (/não encontrado/.test(msg)) throw new ErroDeNegocio("Contato não encontrado.", 404);
   throw e;
 }
 
@@ -73,7 +74,6 @@ export function criarServicosPg({
   contatos: provedores,
   org = ORG_DEMO,
 }: Dependencias) {
-  const custos: TabelaCustos = TABELA_CUSTOS_PADRAO;
 
   async function um<T extends Linha = Linha>(sql: string, params: unknown[] = []): Promise<T | undefined> {
     return (await db.query<T>(sql, params)).rows[0];
@@ -108,7 +108,14 @@ export function criarServicosPg({
 
   const servicos = {
     saldo,
-    custos: () => custos,
+    /** Custos do tenant (config_tenant), com os valores padrão para o que não estiver configurado. */
+    async custos(): Promise<TabelaCustos> {
+      const r = await um<{ custos: Partial<TabelaCustos> }>(
+        "select custos from config_tenant where organizacao_id = $1",
+        [org],
+      );
+      return { ...TABELA_CUSTOS_PADRAO, ...(r?.custos ?? {}) };
+    },
 
     async extrato(): Promise<Lancamento[]> {
       const r = await db.query<Linha>(
@@ -143,7 +150,7 @@ export function criarServicosPg({
       const empresa = await servicos.consultarEmpresa(params.cnpj);
       const cobranca = await cobrar(
         "busca_decisores",
-        custos.busca_decisores,
+        (await servicos.custos()).busca_decisores,
         `Busca de decisores: ${empresa.razaoSocial}`,
         `busca:${params.chave}`,
       );

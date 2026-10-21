@@ -12,7 +12,7 @@ export async function POST(req: Request) {
       return Response.json({ erro: "Informe a chave de idempotência." }, { status: 400 });
     }
     return Response.json(
-      await (await servicos()).buscarDecisores({
+      await (await servicos(req.headers)).buscarDecisores({
         cnpj: corpo.cnpj ?? "",
         cargos: corpo.cargos ?? [],
         chave: corpo.chave,

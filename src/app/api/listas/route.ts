@@ -1,8 +1,8 @@
 import { responderErro, servicos } from "@/lib/app";
 
 /** GET /api/listas */
-export async function GET() {
-  const s = await servicos();
+export async function GET(req: Request) {
+  const s = await servicos(req.headers);
   const listas = await s.listas();
   return Response.json(
     await Promise.all(
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
       listaId?: string;
       contatoIds?: string[];
     };
-    const s = await servicos();
+    const s = await servicos(req.headers);
     if (corpo.listaId) {
       return Response.json(await s.adicionarALista(corpo.listaId, corpo.contatoIds ?? []));
     }

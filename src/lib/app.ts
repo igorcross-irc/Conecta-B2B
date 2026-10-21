@@ -1,24 +1,26 @@
-import { abrirBanco } from "@/db/conexao";
+import { abrirBanco, type Banco } from "@/db/conexao";
 import { CnpjaAberta } from "./providers/cnpja";
 import { EmpresaDemo, ProvedorDemo } from "./providers/mock";
+import { obterSessao } from "./sessao";
 import { criarServicosPg, type ServicosPg } from "./servicosPg";
 import { ErroDeNegocio } from "./servicos";
 
 /**
- * Instância única de serviços do processo, sobre Postgres: DATABASE_URL (Neon) quando definida, senão o banco local embutido (pasta .dados).
- * Há uma só organização de demonstração. Será trocado pelo Supabase quando houver autenticação.
+ * Banco e provedores são únicos no processo; os serviços são criados a cada requisição,
+ * já em nome do usuário e da organização da sessão.
+ * Banco: DATABASE_URL (Neon) quando definida, senão o banco local embutido (pasta .dados).
  */
-const g = globalThis as unknown as { __conectaServicos?: Promise<ServicosPg> };
+const g = globalThis as unknown as { __conectaBanco?: Promise<Banco> };
 
-export function servicos(): Promise<ServicosPg> {
-  g.__conectaServicos ??= abrirBanco().then((db) =>
-    criarServicosPg({
-      db,
-      empresa: process.env.CONECTA_MODO_DEMO === "1" ? new EmpresaDemo() : new CnpjaAberta(),
-      contatos: [new ProvedorDemo()],
-    }),
-  );
-  return g.__conectaServicos;
+export async function servicos(headers: Headers): Promise<ServicosPg> {
+  g.__conectaBanco ??= abrirBanco();
+  const [banco, sessao] = await Promise.all([g.__conectaBanco, obterSessao(headers)]);
+  return criarServicosPg({
+    db: banco.comUsuario(sessao.usuarioId),
+    org: sessao.orgId,
+    empresa: process.env.CONECTA_MODO_DEMO === "1" ? new EmpresaDemo() : new CnpjaAberta(),
+    contatos: [new ProvedorDemo()],
+  });
 }
 
 /** Converte erros de negócio em resposta JSON com o status certo. */
