@@ -3,6 +3,8 @@
 Atualizado em 21/10/2026.
 
 ## Objetivo
+Direção definida em 21/10/2026: sistema B2B para apoiar áreas de vendas de qualquer segmento, com personalização por tenant. Não fica restrito a rádio nem a veículos de comunicação (ver docs/visao-produto.md). ConnectLeads e SPYADS são referências funcionais.
+
 Criar um sistema igual ao ConnectLeads. Projeto independente: não tem relação com o trabalho do Igor nem com empresa dele. A inspiração vem de um vídeo de demonstração que foi compartilhado e de informação pública do site lead.connectmix.com. Referências: o site, o vídeo e o levantamento do site (arquivo no projeto "Leads" do Claude).
 
 ## Feito
@@ -24,7 +26,8 @@ Criar um sistema igual ao ConnectLeads. Projeto independente: não tem relação
 3. Bounce de e-mail: "0%" na tabela comparativa e "abaixo de 2%" no FAQ. Não replicar a inconsistência.
 4. E-mail pessoal no perfil do contato (dito no vídeo) versus LGPD só com contato profissional (dito no site).
 5. Adotar do SPYADS: contagem de contatos disponíveis, prévia grátis, teto de 7 por desbloqueio, busca assíncrona com progresso, controladora com confirmação. Confirmar com o Igor.
-6. Radar de Concorrência: a origem dos dados de rádio (captura e transcrição de anúncios) é desconhecida. Definir fonte própria ou parceria.
+6. Sinais de compra: rádio é só um tipo de sinal. Definir quais entram na primeira versão e a fonte de cada um (a captura de rádio continua sem origem definida).
+7. Primeiro tenant e segmento, e se o acesso é por autoatendimento ou operado por nós (ver perguntas em docs/visao-produto.md).
 
 ## Observação sobre a especificação
 O parágrafo de abertura de docs/especificacao-funcional.md ainda diz que o site não pôde ser lido. Está desatualizado: as seções finais incorporam o levantamento do site e o áudio.
