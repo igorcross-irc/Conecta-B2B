@@ -38,6 +38,8 @@ Abra http://localhost:3000. Telas: Descobrir (busca por CNPJ, decisores, revela�
 
 ## O que ainda é provisório
 - Com `DATABASE_URL` definida em `.env.local` (Neon ou outro Postgres), o app usa esse banco; sem ela, usa o Postgres local embutido. Na primeira conexão ele cria o usuário, a organização e os 20 créditos de demonstração (idempotente). Para usar o Neon: aplique `db/neon/0001_neon.sql` (já aplicado no projeto "Conecta B2B"), copie a URL do botão Connect do painel para `.env.local` e rode `npm run dev`.
+- **Login (Neon Auth):** defina `NEON_AUTH_BASE_URL` e `NEON_AUTH_COOKIE_SECRET` (gere com `openssl rand -base64 32`) no `.env.local`, além da `DATABASE_URL`. As páginas passam a exigir login (`/entrar`), cada usuário ganha uma organização com 20 créditos no primeiro acesso (`garantir_organizacao`) e as rotas `/api` devolvem 401 sem sessão. Sem essas variáveis o app roda em modo demonstração.
+- **Importar contatos** (CSV próprio, sem custo), **sinais de compra** por CNPJ, **opt-out público** em `/optout` (apaga e-mail e telefone guardados) e o script de cobertura: `npx tsx scripts/testar-provedores.ts entrada.csv` (modelo em `docs/modelo-cnpjs.csv`).
 - Os dados ficam, sem `DATABASE_URL`, num Postgres local embutido (PGlite, pasta `.dados`, ignorada pelo git), que roda a mesma migração do Supabase. Há uma só organização de demonstração e a aplicação roda como superusuário (a segurança por linha só vale com Supabase). Falta ligar ao Supabase (autenticação, organizações, papéis).
 - Os decisores vêm de um provedor de demonstração. Falta integrar provedores reais (ver `docs/custos-e-roteiro-de-teste.md`).
 - Sem login, painel da operadora, importação, sinais de compra nem configuração por tenant (esquema SQL já prevê).

@@ -9,7 +9,7 @@ export async function POST(req: Request) {
     if (texto.length > LIMITE_BYTES) {
       return Response.json({ erro: "Arquivo acima de 1 MB." }, { status: 413 });
     }
-    return Response.json(await (await servicos(req.headers)).importarContatos(texto));
+    return Response.json(await (await servicos()).importarContatos(texto));
   } catch (e) {
     return responderErro(e);
   }

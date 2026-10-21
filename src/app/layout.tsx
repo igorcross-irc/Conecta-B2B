@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import { getAuth } from "@/lib/auth/server";
+import { sair } from "./entrar/actions";
 
 export const metadata: Metadata = {
   title: "Conecta-B2B",
@@ -32,7 +34,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 {m.rotulo}
               </Link>
             ))}
-            <Link href="/optout" className="mt-auto px-3 py-2 text-xs text-slate-500 hover:underline">
+            {getAuth() && (
+              <form action={sair} className="mt-auto">
+                <button className="w-full rounded-md px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100">
+                  Sair
+                </button>
+              </form>
+            )}
+            <Link href="/optout" className="px-3 py-2 text-xs text-slate-500 hover:underline">
               Opt-out (LGPD)
             </Link>
           </nav>

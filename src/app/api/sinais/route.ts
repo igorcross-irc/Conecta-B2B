@@ -4,7 +4,7 @@ import { responderErro, servicos } from "@/lib/app";
 export async function GET(req: Request) {
   try {
     const cnpj = new URL(req.url).searchParams.get("cnpj") ?? "";
-    return Response.json(await (await servicos(req.headers)).sinaisDoCnpj(cnpj));
+    return Response.json(await (await servicos()).sinaisDoCnpj(cnpj));
   } catch (e) {
     return responderErro(e);
   }
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
       conteudo?: unknown;
     };
     return Response.json(
-      await (await servicos(req.headers)).registrarSinal({
+      await (await servicos()).registrarSinal({
         cnpj: c.cnpj ?? "",
         tipo: c.tipo ?? "",
         fonte: c.fonte ?? "",

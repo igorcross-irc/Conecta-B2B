@@ -12,15 +12,32 @@ import { ErroDeNegocio } from "./servicos";
  */
 const g = globalThis as unknown as { __conectaBanco?: Promise<Banco> };
 
-export async function servicos(headers: Headers): Promise<ServicosPg> {
-  g.__conectaBanco ??= abrirBanco();
-  const [banco, sessao] = await Promise.all([g.__conectaBanco, obterSessao(headers)]);
+const banco$ = () => (g.__conectaBanco ??= abrirBanco());
+
+function provedores() {
+  return {
+    empresa: process.env.CONECTA_MODO_DEMO === "1" ? new EmpresaDemo() : new CnpjaAberta(),
+    contatos: [new ProvedorDemo()],
+  };
+}
+
+/** Serviços em nome do usuário logado (ou do usuário de demonstração, sem login configurado). */
+export async function servicos(): Promise<ServicosPg> {
+  const banco = await banco$();
+  const sessao = await obterSessao(banco);
   return criarServicosPg({
     db: banco.comUsuario(sessao.usuarioId),
     org: sessao.orgId,
-    empresa: process.env.CONECTA_MODO_DEMO === "1" ? new EmpresaDemo() : new CnpjaAberta(),
-    contatos: [new ProvedorDemo()],
+    ...provedores(),
   });
+}
+
+const ZERO = "00000000-0000-0000-0000-000000000000";
+
+/** Opt-out público: quem pede para sair não tem conta, então roda sem sessão de cliente. */
+export async function registrarOptOutPublico(email: string) {
+  const banco = await banco$();
+  return criarServicosPg({ db: banco.comUsuario(ZERO), org: ZERO, ...provedores() }).registrarOptOut(email);
 }
 
 /** Converte erros de negócio em resposta JSON com o status certo. */

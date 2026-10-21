@@ -31,7 +31,9 @@ beforeAll(async () => {
       select nullif(current_setting('request.jwt.sub', true), '')::uuid $$;
     create role cliente;
   `);
-  await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/0001_init.sql"), "utf8"));
+  for (const arquivo of ["0001_init.sql", "0002_onboarding.sql"]) {
+    await db.exec(readFileSync(join(process.cwd(), "supabase/migrations", arquivo), "utf8"));
+  }
   await db.exec(`
     grant usage on schema public, auth to cliente;
     grant select, insert, update, delete on all tables in schema public to cliente;
@@ -116,5 +118,21 @@ describe("migração 0001", () => {
     await como(null);
     const r = await db.query("select * from contato");
     expect(r.rows).toHaveLength(0);
+  });
+
+  it("garantir_organizacao cria organização com créditos, é idempotente e só vale para o próprio usuário", async () => {
+    const novo = "00000000-0000-0000-0000-0000000000f1";
+    await db.exec("reset role");
+    await db.query("insert into auth.users values ($1)", [novo]);
+    await como(novo);
+    const a = await db.query<{ o: string }>("select garantir_organizacao($1, 'Minha empresa') as o", [novo]);
+    const b = await db.query<{ o: string }>("select garantir_organizacao($1, 'Outra') as o", [novo]);
+    expect(b.rows[0].o).toBe(a.rows[0].o);
+    const s = await db.query<{ s: number }>("select saldo_creditos($1) as s", [a.rows[0].o]);
+    expect(s.rows[0].s).toBe(20);
+    const m = await db.query("select * from membro where usuario_id = $1", [novo]);
+    expect(m.rows).toHaveLength(1);
+    await como(USER_A);
+    await expect(db.query("select garantir_organizacao($1, 'x')", [novo])).rejects.toThrow();
   });
 });
