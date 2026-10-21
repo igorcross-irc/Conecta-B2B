@@ -18,12 +18,15 @@ Criar um sistema igual ao ConnectLeads. Projeto independente: não tem relação
 - Pesquisa de fontes de dados para contatos e empresas (docs/fontes-de-dados.md): base de CNPJ, provedores com API, risco do LinkedIn e LGPD.
 - Classificação de fontes em gratuito, pago e IA, conta por contato e roteiro do teste de provedores (docs/custos-e-roteiro-de-teste.md).
 - Piloto de alimentos com 5 empresas e fontes gratuitas (docs/piloto-alimentos.md): nomes e cargos de grandes empresas aparecem na imprensa; e-mail e telefone não; dados de pequenas empresas, não.
+- Primeira versão do código (Next.js 16, TypeScript, Tailwind, Vitest): consulta de CNPJ, busca de decisores em cascata, créditos com estorno, revelação paga, listas e CSV, telas Descobrir, Listas e Créditos. Migração SQL do Supabase com segurança por linha, testada em Postgres embutido. 39 testes passando e build ok. Como rodar: ver README.
 
 ## Falta
 - Navegar pelas telas internas que o vídeo não mostra: Importações, Equipe, Configurações, /admin e modais. Exige sessão nova do Claude ou modo de permissão manual.
 - Executar o teste de provedores (roteiro em docs/custos-e-roteiro-de-teste.md): falta definir as 50 empresas e o verificador de e-mail. Baixar a base aberta de CNPJ (ver docs/fontes-de-dados.md).
 - Validar base legal e opt-out com advogado.
-- Escolher stack e começar o código.
+- Ligar a aplicação ao Supabase (login, organizações, papéis, troca do estado em memória pelo banco).
+- Integrar o primeiro provedor real de contatos depois do teste.
+- Painel da operadora, importação, sinais de compra e configuração por tenant.
 
 ## Decisões em aberto
 1. Landing promete busca por raio e avaliações do Google Maps, CNPJ/QSA e 7 departamentos de decisores; o app do vídeo mostra bem menos. O que construir?
