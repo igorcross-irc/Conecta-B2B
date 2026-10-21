@@ -39,3 +39,5 @@ Criar um sistema igual ao ConnectLeads. Projeto independente: não tem relação
 
 ## Observação sobre a especificação
 O parágrafo de abertura de docs/especificacao-funcional.md ainda diz que o site não pôde ser lido. Está desatualizado: as seções finais incorporam o levantamento do site e o áudio.
+
+- 21/10/2026: criado o projeto Neon "Conecta B2B" (região aws-eu-central-1, id round-resonance-16677490) e aplicado o esquema (`db/neon/0001_neon.sql`, sem dados). A aplicação ainda usa o banco local; falta ligá-la ao Neon por DATABASE_URL (segredo, só em .env.local do Igor, nunca no repositório) e ligar o login (Neon Auth já provisionado).
