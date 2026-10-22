@@ -1,5 +1,8 @@
 import { abrirBanco, type Banco } from "@/db/conexao";
+import { BrasilApi, EmpresaEmCascata } from "./providers/brasilapi";
 import { CnpjaAberta } from "./providers/cnpja";
+import { SiteEmpresa } from "./providers/site";
+import { SociosReceita } from "./providers/socios";
 import { EmpresaDemo, ProvedorDemo } from "./providers/mock";
 import { obterSessao } from "./sessao";
 import { criarServicosPg, type ServicosPg } from "./servicosPg";
@@ -14,10 +17,18 @@ const g = globalThis as unknown as { __conectaBanco?: Promise<Banco> };
 
 const banco$ = () => (g.__conectaBanco ??= abrirBanco());
 
+/**
+ * Fontes gratuitas por padrão: BrasilAPI e CNPJá para a empresa; sócios da Receita e páginas públicas
+ * do site para os contatos. Provedores pagos entram depois, à frente na lista, sem mexer no resto.
+ * CONECTA_MODO_DEMO=1 troca tudo por dados fictícios.
+ */
 function provedores() {
+  if (process.env.CONECTA_MODO_DEMO === "1") {
+    return { empresa: new EmpresaDemo(), contatos: [new ProvedorDemo()] };
+  }
   return {
-    empresa: process.env.CONECTA_MODO_DEMO === "1" ? new EmpresaDemo() : new CnpjaAberta(),
-    contatos: [new ProvedorDemo()],
+    empresa: new EmpresaEmCascata([new BrasilApi(), new CnpjaAberta()]),
+    contatos: [new SociosReceita(), new SiteEmpresa()],
   };
 }
 

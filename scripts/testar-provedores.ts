@@ -8,6 +8,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { lerCsv, normalizarCabecalho } from "../src/lib/csv";
+import { BrasilApi, EmpresaEmCascata } from "../src/lib/providers/brasilapi";
 import { CnpjaAberta } from "../src/lib/providers/cnpja";
 import { EmpresaDemo, ProvedorDemo } from "../src/lib/providers/mock";
 import { celulaCsv } from "../src/lib/servicos";
@@ -31,7 +32,7 @@ async function main() {
   const demo = process.env.CONECTA_MODO_DEMO === "1";
 
   const { linhas: resultado, resumo } = await executarTeste(entradas, {
-    empresa: demo ? new EmpresaDemo() : new CnpjaAberta(),
+    empresa: demo ? new EmpresaDemo() : new EmpresaEmCascata([new BrasilApi(), new CnpjaAberta()]),
     contatos: [new ProvedorDemo()],
     cargos: ["comercial", "marketing"],
     pausaMs: demo ? 0 : 13_000,
