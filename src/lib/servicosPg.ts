@@ -830,15 +830,20 @@ export function criarServicosPg({
       if (f.comEmail) where.push("e.email is not null");
       if (f.comTelefone) where.push("e.telefone is not null");
       const w = where.join(" and ");
-      const total = await um<{ n: number }>(`select count(*)::int as n from rf_estabelecimento e where ${w}`, p);
+      // Uma só varredura: a contagem vem junto da página (count(*) over ()), em vez de duas consultas.
       const r = await db.query(
-        `select e.cnpj, e.razao_social, e.nome_fantasia, e.municipio, e.uf, e.bairro, e.cnae, c.descricao as atividade,
+        `select count(*) over ()::int as total_geral, e.cnpj, e.razao_social, e.nome_fantasia, e.municipio, e.uf, e.bairro, e.cnae, c.descricao as atividade,
                 e.porte, e.aberta_em, e.matriz, (e.email is not null) as tem_email, (e.telefone is not null) as tem_telefone,
                 (select i.dominio from base_empresa_info i where i.cnpj = e.cnpj) as dominio
            from rf_estabelecimento e left join rf_cnae c on c.codigo = e.cnae
           where ${w} order by ${f.ordem === "recentes" ? "e.aberta_em desc nulls last, e.razao_social" : "e.razao_social"} limit 25 offset ${add(pagina * 25)}`,
         p,
       );
+      let totalGeral = r.rows.length ? Number(r.rows[0].total_geral) : 0;
+      // Página além do fim: a contagem não veio junto, então conta à parte.
+      if (!r.rows.length && pagina > 0) {
+        totalGeral = (await um<{ n: number }>(`select count(*)::int as n from rf_estabelecimento e where ${w}`, p.slice(0, -1)))?.n ?? 0;
+      }
       // Sites já conhecidos cujo endereço combina com o termo (não dependem da base da Receita)
       const termoSite = [nome, ...termos].filter(Boolean).join("").replace(/ /g, "");
       const sites = termoSite.length >= 3
@@ -851,7 +856,7 @@ export function criarServicosPg({
           )).rows.map((x) => String(x.dominio))
         : [];
       return {
-        total: total?.n ?? 0,
+        total: totalGeral,
         baseReceita: await temBaseReceita(),
         sites,
         itens: r.rows.map((x) => ({

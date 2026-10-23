@@ -5,6 +5,7 @@ import { ErroDeNegocio } from "@/lib/servicos";
 import { Logo } from "@/components/Logo";
 import { BarraProgresso } from "@/components/BarraProgresso";
 import { Menu, type ItemMenu } from "@/components/Menu";
+import { PainelLateral } from "@/components/PainelLateral";
 import { sair } from "../(site)/entrar/actions";
 import { trocarOrganizacao } from "./acoes";
 
@@ -21,7 +22,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const saldo = await servicos.saldo();
   const itens: ItemMenu[] = [
     { href: "/pesquisar", rotulo: "Pesquisar", secao: "Prospecção" },
-    { href: "/descobrir", rotulo: "Descobrir" },
+    { href: "/descobrir", rotulo: "Descobrir", secao: "Prospecção" },
     { href: "/base", rotulo: "Base comum", secao: "Prospecção" },
     { href: "/listas", rotulo: "Listas", secao: "Prospecção" },
     { href: "/importar", rotulo: "Importar", secao: "Prospecção" },
@@ -34,8 +35,17 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       <BarraProgresso />
-      <aside className="flex flex-col gap-4 bg-marca-900 p-4 text-white md:sticky md:top-0 md:h-screen md:w-60 md:shrink-0 md:overflow-y-auto">
-        <a href="/descobrir" aria-label="Conecta-B2B">
+      <PainelLateral
+        logo={<Logo claro />}
+        saldo={saldo}
+        atalhos={[
+          { href: "/pesquisar", rotulo: "Pesquisar" },
+          { href: "/descobrir", rotulo: "Descobrir", secao: "Prospecção" },
+          { href: "/listas", rotulo: "Listas" },
+          { href: "/base", rotulo: "Base" },
+        ]}
+      >
+        <a href="/descobrir" aria-label="Conecta-B2B" className="hidden md:block">
           <Logo claro />
         </a>
         {sessao.orgs.length > 1 ? (
@@ -72,8 +82,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           )}
           <a href="/optout" className="mt-2 block underline hover:text-white">Opt-out (LGPD)</a>
         </div>
-      </aside>
-      <main className="min-w-0 flex-1 p-4 md:p-8">
+      </PainelLateral>
+      <main className="min-w-0 flex-1 p-4 pb-24 md:p-8 md:pb-8">
         {sessao.demo && (
           <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
             Modo de demonstração: sem login e com banco local. Em produção, cada pessoa entra com a sua conta.

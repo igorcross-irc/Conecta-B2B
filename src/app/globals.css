@@ -42,6 +42,9 @@ body {
   .input {
     @apply block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm placeholder:text-slate-400 focus:border-marca-500 focus:outline-none focus:ring-2 focus:ring-marca-200;
   }
+  .campo {
+    @apply rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm placeholder:text-slate-400 focus:border-marca-500 focus:outline-none focus:ring-2 focus:ring-marca-200;
+  }
   .rotulo {
     @apply block text-sm font-medium text-slate-700;
   }
@@ -83,3 +86,32 @@ body {
 .pontinho:nth-child(2) { animation-delay: 0.15s; }
 .pontinho:nth-child(3) { animation-delay: 0.3s; }
 @media (prefers-reduced-motion: reduce) { .esqueleto, .barra-progresso, .pontinho { animation: none; } }
+
+/* Celular: campos com 16px (o iOS não dá zoom ao digitar), alvos de toque maiores e tabelas rolando de lado. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+    min-height: 44px;
+  }
+  .btn,
+  .btn-primario,
+  .btn-destaque,
+  .btn-sec,
+  .btn-perigo,
+  button {
+    min-height: 44px;
+  }
+  .cartao {
+    padding: 1rem;
+  }
+  .titulo-pagina {
+    font-size: 1.375rem;
+  }
+  table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}

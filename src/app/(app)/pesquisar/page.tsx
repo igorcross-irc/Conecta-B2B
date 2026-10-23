@@ -6,6 +6,8 @@ export const metadata = { title: "Pesquisar" };
 
 const CAMPOS = ["nome", "termos", "uf", "cidade", "bairro", "segmento"] as const;
 
+export const maxDuration = 60;
+
 export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar">) {
   await connection();
   const sp = await searchParams;
