@@ -15,13 +15,14 @@ interface ClienteTx {
   query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }>;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DECLARAR_USUARIO = "select set_config('request.jwt.sub', $1, true)";
 
 /**
  * Abre o banco: Postgres remoto (Neon, Supabase etc.) quando DATABASE_URL existir;
  * senão o banco local embutido (pasta .dados).
  * A URL é segredo: fica só em .env.local, nunca no repositório.
- * Cada consulta roda numa transação que declara o usuário; funciona atrás de pooler em modo transação.
+ * Cada consulta declara o usuário antes de rodar (o banco local, numa transação).
  */
 export async function abrirBanco(): Promise<Banco> {
   const url = process.env.DATABASE_URL;
@@ -44,16 +45,14 @@ export async function abrirBanco(): Promise<Banco> {
     banco = {
       comUsuario: (usuarioId) => ({
         async query<T>(sql: string, params: unknown[] = []) {
+          if (!UUID.test(usuarioId)) throw new Error("Identificador de usuário inválido.");
           const client = await pool.connect();
           try {
-            await client.query("begin");
-            await client.query(DECLARAR_USUARIO, [usuarioId]);
+            // Duas idas ao banco em vez de quatro: a identidade vai como literal (UUID validado) e vale para a conexão
+            // até a próxima consulta, que a redefine. Cada consulta é uma única instrução, então já é atômica.
+            await client.query(`select set_config('request.jwt.sub', '${usuarioId}', false)`);
             const r = await client.query(sql, params);
-            await client.query("commit");
             return { rows: r.rows as T[] };
-          } catch (e) {
-            await client.query("rollback").catch(() => undefined);
-            throw e;
           } finally {
             client.release();
           }

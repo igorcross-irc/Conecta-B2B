@@ -23,22 +23,22 @@ afterEach(() => {
 });
 
 describe("abrirBanco com DATABASE_URL", () => {
-  it("roda cada consulta numa transação com o usuário declarado", async () => {
+  it("declara o usuário e roda a consulta em duas idas ao banco", async () => {
     process.env.DATABASE_URL = "postgresql://x:y@host/db";
     const { abrirBanco } = await import("./conexao");
     const db = (await abrirBanco()).comUsuario("00000000-0000-0000-0000-0000000000d1");
     chamadas.length = 0;
     expect((await db.query("select 42 as x")).rows).toEqual([{ x: 42 }]);
-    expect(chamadas).toEqual(["begin", "select set_config('request.jwt.sub',", "select 42", "commit", "release"]
-      .map((c) => (c.startsWith("select set_config") ? "select set_config('request.jwt.sub'," : c)));
+    expect(chamadas).toEqual(["select set_config('request.jwt.sub',", "select 42", "release"]);
   });
 
-  it("desfaz a transação e libera a conexão em caso de erro", async () => {
+  it("libera a conexão em caso de erro e recusa identificador que não seja UUID", async () => {
     process.env.DATABASE_URL = "postgresql://x:y@host/db";
     const { abrirBanco } = await import("./conexao");
-    const db = (await abrirBanco()).comUsuario("00000000-0000-0000-0000-0000000000d1");
+    const banco = await abrirBanco();
     chamadas.length = 0;
-    await expect(db.query("select boom")).rejects.toThrow("falhou");
-    expect(chamadas.slice(-2)).toEqual(["rollback", "release"]);
+    await expect(banco.comUsuario("00000000-0000-0000-0000-0000000000d1").query("select boom")).rejects.toThrow("falhou");
+    expect(chamadas.slice(-1)).toEqual(["release"]);
+    await expect(banco.comUsuario("x'); drop table a;--").query("select 1")).rejects.toThrow(/inválido/);
   });
 });

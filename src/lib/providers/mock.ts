@@ -1,10 +1,8 @@
-import type {
-  Contato,
+import { VERSAO_EMPRESA, type Contato,
   Empresa,
   ProvedorEmpresa,
   EntradaBuscaContatos,
-  ProvedorContatos,
-} from "./types";
+  ProvedorContatos, } from "./types";
 
 /**
  * Provedor de demonstração. Gera pessoas FICTÍCIAS com e-mails em exemplo.com.br,
@@ -83,6 +81,7 @@ export class EmpresaDemo implements ProvedorEmpresa {
       socios: [],
       fonte: this.nome,
       obtidoEm: new Date().toISOString(),
+      versao: VERSAO_EMPRESA,
     };
   }
 }

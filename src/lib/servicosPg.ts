@@ -6,6 +6,8 @@ import { lerCsv, normalizarCabecalho } from "./csv";
 import { ORG_DEMO, USUARIO_DEMO } from "@/db/local";
 import { dominioSeguro } from "./providers/site";
 import type { Contato, Empresa, ProvedorContatos, ProvedorEmpresa } from "./providers/types";
+import { VERSAO_EMPRESA } from "./providers/types";
+import { ABERTURAS, PORTES, faixasDeSetores } from "./setores";
 import {
   celulaCsv,
   ErroDeNegocio,
@@ -16,11 +18,20 @@ import {
 
 export interface PesquisaFiltros {
   nome?: string; termos?: string; uf?: string; cidade?: string; bairro?: string; segmento?: string;
+  /** ids de macro-setores (ver setores.ts). */
+  setores?: string[];
+  porte?: string[];
+  /** id de faixa de tempo de abertura (ver ABERTURAS). */
+  abertura?: string;
+  comEmail?: boolean;
+  comTelefone?: boolean;
+  ordem?: "nome" | "recentes";
   incluirFiliais?: boolean; pagina?: number;
 }
 export interface ItemPesquisa {
   cnpj: string; razaoSocial: string; nomeFantasia?: string; municipio?: string; uf?: string;
   bairro?: string; atividade?: string; dominio?: string;
+  porte?: string; abertaEm?: string; temEmail: boolean; temTelefone: boolean; matriz: boolean;
 }
 export interface ResultadoPesquisa { itens: ItemPesquisa[]; total: number; baseReceita: boolean; sites: string[] }
 
@@ -174,6 +185,48 @@ export function criarServicosPg({
 
   const temBaseReceita = async () =>
     ((await db.query<{ n: number }>("select count(*)::int as n from (select 1 from rf_estabelecimento limit 1) x")).rows[0]?.n ?? 0) > 0;
+  /** Linha da base da Receita importada (rf_estabelecimento), se existir. */
+  const linhaReceita = (cnpj: string) =>
+    um<Record<string, unknown>>(
+      `select e.*, c.descricao as cnae_descricao from rf_estabelecimento e left join rf_cnae c on c.codigo = e.cnae where e.cnpj = $1`,
+      [cnpj],
+    );
+  const telefoneBr = (v: unknown) => {
+    const d = String(v ?? "").replace(/\D/g, "");
+    return d.length >= 10 ? `(${d.slice(0, 2)}) ${d.slice(2)}` : null;
+  };
+  const empresaDaReceita = async (cnpj: string): Promise<Empresa | null> => {
+    const r = await linhaReceita(cnpj);
+    if (!r) return null;
+    return completarComReceita({
+      cnpj, razaoSocial: String(r.razao_social), nomeFantasia: (r.nome_fantasia as string) ?? undefined, situacao: "Ativa",
+      telefones: [], emailsCadastrais: [], socios: [], fonte: "Receita Federal (base importada)", obtidoEm: new Date().toISOString(),
+      versao: VERSAO_EMPRESA,
+    });
+  };
+  /** Preenche o que a fonte externa não trouxe com os dados da base da Receita já importada. */
+  const completarComReceita = async (e: Empresa): Promise<Empresa> => {
+    const r = await linhaReceita(e.cnpj);
+    if (!r) return e;
+    const tel = telefoneBr(r.telefone);
+    const mail = r.email ? String(r.email).toLowerCase() : null;
+    return {
+      ...e,
+      municipio: e.municipio ?? ((r.municipio as string) || undefined),
+      uf: e.uf ?? ((r.uf as string) || undefined),
+      porte: e.porte ?? ((r.porte as string) || undefined),
+      abertaEm: e.abertaEm ?? (r.aberta_em ? new Date(r.aberta_em as string).toISOString().slice(0, 10) : undefined),
+      matriz: e.matriz ?? (r.matriz as boolean),
+      cnaePrincipal: e.cnaePrincipal ?? (r.cnae ? { codigo: Number(r.cnae), descricao: (r.cnae_descricao as string) ?? "" } : undefined),
+      endereco: {
+        ...e.endereco,
+        bairro: e.endereco?.bairro ?? ((r.bairro as string) || undefined),
+        cep: e.endereco?.cep ?? ((r.cep as string) || undefined),
+      },
+      telefones: tel && !e.telefones.includes(tel) ? [...e.telefones, tel] : e.telefones,
+      emailsCadastrais: mail && !e.emailsCadastrais.includes(mail) ? [...e.emailsCadastrais, mail] : e.emailsCadastrais,
+    };
+  };
   const saldo = async () =>
     Number((await um<{ s: number }>("select saldo_creditos($1) as s", [org]))!.s);
 
@@ -372,18 +425,23 @@ export function criarServicosPg({
     async consultarEmpresa(cnpj: string): Promise<Empresa> {
       if (!alvoValido(cnpj)) throw new ErroDeNegocio("CNPJ ou site inválido.");
       const digitos = chaveAlvo(cnpj);
+      const ehSite = digitos.startsWith("site:");
       const guardada = await um<{ dados: Empresa }>(
         "select dados from empresa_cache where cnpj = $1 and obtido_em > now() - interval '30 days'",
         [digitos],
       );
       let e = guardada?.dados;
-      if (!e && digitos.startsWith("site:")) {
+      // Fichas guardadas antes do formato novo (sem endereço, sócios com data etc.) são consultadas de novo.
+      const desatualizada = !!e && !ehSite && (e.versao ?? 1) < VERSAO_EMPRESA;
+      const antiga = desatualizada ? e : undefined;
+      if (desatualizada) e = undefined;
+      if (!e && ehSite) {
         // Alvo por site, sem CNPJ: a empresa é o próprio endereço e as fontes de contato rodam sobre ele.
         const dom = digitos.slice(5);
         e = {
           cnpj: digitos, razaoSocial: dom, nomeFantasia: dom, situacao: "Pesquisa por site (sem CNPJ)",
           telefones: [], emailsCadastrais: [], dominio: dom, socios: [], fonte: "Site informado",
-          obtidoEm: new Date().toISOString(),
+          obtidoEm: new Date().toISOString(), versao: VERSAO_EMPRESA,
         };
         await db.query(
           `insert into empresa_cache (cnpj, dados, fonte) values ($1, $2, $3)
@@ -392,7 +450,15 @@ export function criarServicosPg({
         );
       }
       if (!e) {
-        const nova = await provedorEmpresa.buscarPorCnpj(cnpj);
+        let nova: Empresa | null = null;
+        try {
+          nova = await provedorEmpresa.buscarPorCnpj(cnpj);
+        } catch (erro) {
+          // Fonte externa indisponível ou no limite: usa a ficha antiga ou a base da Receita já importada.
+          nova = antiga ?? (await empresaDaReceita(digitos));
+          if (!nova) throw erro;
+        }
+        if (!nova) nova = await empresaDaReceita(digitos);
         if (!nova) throw new ErroDeNegocio("Empresa não encontrada.", 404);
         await db.query(
           `insert into empresa_cache (cnpj, dados, fonte) values ($1, $2, $3)
@@ -401,6 +467,7 @@ export function criarServicosPg({
         );
         e = nova;
       }
+      if (!ehSite) e = await completarComReceita(e);
       const info = await um<{ dominio: string | null }>("select dominio from base_empresa_info where cnpj = $1", [digitos]);
       return info?.dominio ? { ...e, dominio: info.dominio } : e;
     },
@@ -716,7 +783,10 @@ export function criarServicosPg({
       const segmento = normalizarBusca(f.segmento ?? "");
       const todasMatrizes = f.incluirFiliais === true;
       const pagina = Math.max(0, Math.floor(f.pagina ?? 0));
-      const temFiltro = nome || termos.length || uf || cidade || bairro || segmento;
+      const setores = (f.setores ?? []).filter(Boolean);
+      const portes = (f.porte ?? []).filter((x) => (PORTES as readonly string[]).includes(x));
+      const abertura = ABERTURAS.find((a) => a.id === f.abertura);
+      const temFiltro = nome || termos.length || uf || cidade || bairro || segmento || setores.length || portes.length || abertura || f.comEmail || f.comTelefone;
       if (!temFiltro) return { itens: [], total: 0, baseReceita: await temBaseReceita(), sites: [] };
 
       const where: string[] = ["e.situacao = 'ATIVA'"];
@@ -736,13 +806,25 @@ export function criarServicosPg({
             : `e.cnae in (select codigo from rf_cnae where busca like '%' || ${add(segmento)} || '%')`,
         );
       }
+      const faixas = faixasDeSetores(setores);
+      if (setores.length) {
+        where.push(`(${faixas.map(([a, b]) => `e.cnae between ${a} and ${b}`).join(" or ") || "false"})`);
+      }
+      if (portes.length) where.push(`e.porte = any(${add(portes)}::text[])`);
+      if (abertura) {
+        where.push(`e.aberta_em <= current_date - make_interval(years => ${Math.floor(abertura.deAnos)})`);
+        if (abertura.ateAnos < 100) where.push(`e.aberta_em > current_date - make_interval(years => ${Math.floor(abertura.ateAnos)})`);
+      }
+      if (f.comEmail) where.push("e.email is not null");
+      if (f.comTelefone) where.push("e.telefone is not null");
       const w = where.join(" and ");
       const total = await um<{ n: number }>(`select count(*)::int as n from rf_estabelecimento e where ${w}`, p);
       const r = await db.query(
         `select e.cnpj, e.razao_social, e.nome_fantasia, e.municipio, e.uf, e.bairro, e.cnae, c.descricao as atividade,
+                e.porte, e.aberta_em, e.matriz, (e.email is not null) as tem_email, (e.telefone is not null) as tem_telefone,
                 (select i.dominio from base_empresa_info i where i.cnpj = e.cnpj) as dominio
            from rf_estabelecimento e left join rf_cnae c on c.codigo = e.cnae
-          where ${w} order by e.razao_social limit 25 offset ${add(pagina * 25)}`,
+          where ${w} order by ${f.ordem === "recentes" ? "e.aberta_em desc nulls last, e.razao_social" : "e.razao_social"} limit 25 offset ${add(pagina * 25)}`,
         p,
       );
       // Sites já conhecidos cujo endereço combina com o termo (não dependem da base da Receita)
@@ -769,6 +851,11 @@ export function criarServicosPg({
           bairro: (x.bairro as string) ?? undefined,
           atividade: (x.atividade as string) ?? undefined,
           dominio: (x.dominio as string) ?? undefined,
+          porte: (x.porte as string) ?? undefined,
+          abertaEm: x.aberta_em ? new Date(x.aberta_em as string).toISOString().slice(0, 10) : undefined,
+          temEmail: x.tem_email === true,
+          temTelefone: x.tem_telefone === true,
+          matriz: x.matriz === true,
         })),
       };
     },

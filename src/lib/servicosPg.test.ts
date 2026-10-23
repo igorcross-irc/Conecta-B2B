@@ -14,6 +14,7 @@ const empresa: Empresa = {
   socios: [],
   fonte: "teste",
   obtidoEm: "2026-10-21T00:00:00Z",
+  versao: 2,
 };
 const provedorEmpresa: ProvedorEmpresa = { nome: "teste", buscarPorCnpj: async () => empresa };
 
@@ -474,5 +475,40 @@ describe("alvo por site e pesquisa avançada", () => {
     expect((await s.pesquisar({ bairro: "barra", segmento: "atacadista" })).total).toBe(1);
     expect((await s.pesquisar({ segmento: "4639701" })).total).toBe(1);
     expect((await s.pesquisar({ nome: "zzz" })).total).toBe(0);
+  });
+});
+
+describe("pesquisa avançada: setor, porte, abertura e contato", () => {
+  it("filtra por macro-setor, porte, tempo de abertura e e-mail/telefone", async () => {
+    const { db, s } = await novo();
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, nome_fantasia, matriz, situacao, cnae, uf, municipio, bairro, porte, email, telefone, aberta_em, busca) values
+       ('33000167000101','MERCADO A','Mercado A',true,'ATIVA',4711302,'RJ','Rio','Centro','Demais','a@m.com','2133334444', current_date - interval '20 years','mercado a'),
+       ('11222333000181','CLINICA B','Clínica B',true,'ATIVA',8630503,'RJ','Rio','Centro','Micro empresa',null,null, current_date - interval '6 months','clinica b'),
+       ('00000000000191','CLINICA C','Clínica C',true,'ATIVA',8630504,'RJ','Rio','Tijuca','Empresa de pequeno porte','c@c.com',null, current_date - interval '2 years','clinica c')`,
+    );
+    expect((await s.pesquisar({ setores: ["varejo"] })).itens.map((i) => i.cnpj)).toEqual(["33000167000101"]);
+    expect((await s.pesquisar({ setores: ["saude"] })).total).toBe(2);
+    expect((await s.pesquisar({ setores: ["saude"], porte: ["Micro empresa"] })).itens[0].razaoSocial).toBe("CLINICA B");
+    expect((await s.pesquisar({ uf: "RJ", abertura: "novas" })).itens.map((i) => i.cnpj)).toEqual(["11222333000181"]);
+    expect((await s.pesquisar({ uf: "RJ", abertura: "10mais" })).itens.map((i) => i.cnpj)).toEqual(["33000167000101"]);
+    expect((await s.pesquisar({ uf: "RJ", comEmail: true })).total).toBe(2);
+    expect((await s.pesquisar({ uf: "RJ", comTelefone: true })).total).toBe(1);
+    const r = await s.pesquisar({ uf: "RJ", ordem: "recentes" });
+    expect(r.itens[0]).toMatchObject({ razaoSocial: "CLINICA B", temEmail: false, temTelefone: false, matriz: true });
+  });
+
+  it("ficha se completa com a base da Receita e cai nela se a fonte externa falhar", async () => {
+    const { db } = await novo();
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, nome_fantasia, matriz, situacao, cnae, uf, municipio, bairro, cep, porte, email, telefone, aberta_em, busca) values
+       ('11222333000181','CLINICA B LTDA','Clínica B',true,'ATIVA',8630503,'RJ','Rio de Janeiro','Tijuca','20270000','Micro empresa','contato@clinicab.com.br','2133334444','2020-05-01','clinica b ltda clinica b')`,
+    );
+    const s2 = criarServicosPg({ db, empresa: { nome: "x", buscarPorCnpj: async () => { throw new Error("limite"); } }, contatos: [new ProvedorDemo()] });
+    const e = await s2.consultarEmpresa("11222333000181");
+    expect(e).toMatchObject({ razaoSocial: "CLINICA B LTDA", municipio: "Rio de Janeiro", abertaEm: "2020-05-01", matriz: true });
+    expect(e.endereco).toMatchObject({ bairro: "Tijuca", cep: "20270000" });
+    expect(e.emailsCadastrais).toContain("contato@clinicab.com.br");
+    expect(e.telefones).toContain("(21) 33334444");
   });
 });

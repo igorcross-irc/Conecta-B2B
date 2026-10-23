@@ -1,5 +1,5 @@
 import { cnpjValido, somenteDigitos } from "../cnpj";
-import type { Empresa, ProvedorEmpresa } from "./types";
+import { VERSAO_EMPRESA, type Empresa, type ProvedorEmpresa } from "./types";
 
 /**
  * API aberta da CNPJá: GET https://open.cnpja.com/office/{cnpj}
@@ -13,14 +13,19 @@ interface RespostaCnpja {
   taxId: string;
   alias?: string | null;
   status?: { text?: string };
+  founded?: string;
+  head?: boolean;
   company?: {
     name?: string;
     equity?: number;
     nature?: { text?: string };
     size?: { text?: string };
-    members?: { person?: { name?: string }; role?: { text?: string } }[];
+    simples?: { optant?: boolean };
+    simei?: { optant?: boolean };
+    members?: { since?: string; person?: { name?: string }; role?: { text?: string } }[];
   };
-  address?: { city?: string; state?: string };
+  address?: { street?: string; number?: string; details?: string; district?: string; city?: string; state?: string; zip?: string };
+  sideActivities?: { id: number; text: string }[];
   phones?: { area?: string; number?: string }[];
   emails?: { address?: string; domain?: string; ownership?: string }[];
   mainActivity?: { id: number; text: string };
@@ -43,6 +48,18 @@ export function mapearCnpja(r: RespostaCnpja, agora = new Date()): Empresa {
       : undefined,
     municipio: r.address?.city,
     uf: r.address?.state,
+    endereco: {
+      logradouro: r.address?.street || undefined,
+      numero: r.address?.number || undefined,
+      complemento: r.address?.details || undefined,
+      bairro: r.address?.district || undefined,
+      cep: r.address?.zip || undefined,
+    },
+    abertaEm: r.founded || undefined,
+    matriz: r.head,
+    cnaesSecundarios: (r.sideActivities ?? []).map((c) => ({ codigo: c.id, descricao: c.text })),
+    simples: r.company?.simples?.optant,
+    mei: r.company?.simei?.optant,
     telefones: (r.phones ?? [])
       .filter((t) => t.number)
       .map((t) => `(${t.area ?? ""}) ${t.number}`),
@@ -51,9 +68,11 @@ export function mapearCnpja(r: RespostaCnpja, agora = new Date()): Empresa {
     socios: (r.company?.members ?? []).map((m) => ({
       nome: m.person?.name ?? "",
       qualificacao: m.role?.text ?? "",
+      desde: m.since,
     })),
     fonte: "CNPJá (API aberta)",
     obtidoEm: agora.toISOString(),
+    versao: VERSAO_EMPRESA,
   };
 }
 

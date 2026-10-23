@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { contexto } from "@/lib/app";
 import { ErroDeNegocio } from "@/lib/servicos";
 import { Logo } from "@/components/Logo";
+import { BarraProgresso } from "@/components/BarraProgresso";
 import { Menu, type ItemMenu } from "@/components/Menu";
 import { sair } from "../(site)/entrar/actions";
 import { trocarOrganizacao } from "./acoes";
@@ -32,6 +33,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const ativa = sessao.orgs.find((o) => o.id === sessao.orgId);
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
+      <BarraProgresso />
       <aside className="flex flex-col gap-4 bg-marca-900 p-4 text-white md:sticky md:top-0 md:h-screen md:w-60 md:shrink-0 md:overflow-y-auto">
         <a href="/descobrir" aria-label="Conecta-B2B">
           <Logo claro />
