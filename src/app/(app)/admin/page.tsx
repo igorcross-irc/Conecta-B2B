@@ -40,7 +40,10 @@ export default async function Admin() {
         {orgs.map((o) => (
           <div key={o.id} className="cartao space-y-3">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="font-semibold">{o.nome}</p>
+              <div>
+                <p className="font-semibold">{o.nome}</p>
+                {o.admins && <p className="text-xs text-slate-500">{o.admins}</p>}
+              </div>
               <p className="text-sm text-slate-500">
                 {o.membros} membro(s) · {o.buscas} busca(s) · saldo <b className="text-marca-700">{o.saldo}</b>
               </p>

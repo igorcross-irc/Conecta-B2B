@@ -834,7 +834,8 @@ export function criarServicosPg({
         `select o.id, o.nome, o.criado_em, c.custos,
                 (select count(*)::int from membro m where m.organizacao_id = o.id) as membros,
                 (select count(*)::int from busca_job j where j.organizacao_id = o.id) as buscas,
-                saldo_creditos(o.id) as saldo
+                saldo_creditos(o.id) as saldo,
+                (select string_agg(u.email, ', ' order by u.email) from membro m2 join neon_auth."user" u on u.id = m2.usuario_id where m2.organizacao_id = o.id and m2.papel = 'administrador') as admins
            from organizacao o left join config_tenant c on c.organizacao_id = o.id order by o.criado_em desc limit 200`,
       );
       return r.rows.map((x) => ({
@@ -844,6 +845,7 @@ export function criarServicosPg({
         membros: Number(x.membros),
         buscas: Number(x.buscas),
         saldo: Number(x.saldo),
+        admins: (x.admins as string) ?? "",
         custos: { ...TABELA_CUSTOS_PADRAO, ...((x.custos as Partial<TabelaCustos>) ?? {}) },
       }));
     },
