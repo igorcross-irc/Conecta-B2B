@@ -47,8 +47,8 @@ export interface EstadoBusca {
   saldo?: number;
 }
 
-/** Validade do resultado no pool: 30 dias quando achou alguém, 1 dia quando não achou nada. */
-const VALIDADE_SQL = "case when jsonb_array_length(contatos) > 0 then interval '30 days' else interval '1 day' end";
+/** Validade do resultado no pool: 90 dias quando achou alguém, 1 dia quando não achou nada. */
+const VALIDADE_SQL = "case when jsonb_array_length(contatos) > 0 then interval '90 days' else interval '1 day' end";
 /** Uma busca sem sinal de vida por tanto tempo é considerada perdida (servidor reiniciou ou excedeu o prazo). */
 const TEMPO_MAXIMO_BUSCA_MIN = 5;
 
@@ -419,7 +419,7 @@ export function criarServicosPg({
     },
 
     /**
-     * Empresa pelo CNPJ. Reaproveita a base compartilhada (empresa_cache, 30 dias) antes de chamar as APIs
+     * Empresa pelo CNPJ. Reaproveita a base compartilhada (empresa_cache, 90 dias) antes de chamar as APIs
      * públicas, e aplica por cima o que a comunidade corrigiu (site da empresa).
      */
     async consultarEmpresa(cnpj: string): Promise<Empresa> {
@@ -427,7 +427,7 @@ export function criarServicosPg({
       const digitos = chaveAlvo(cnpj);
       const ehSite = digitos.startsWith("site:");
       const guardada = await um<{ dados: Empresa }>(
-        "select dados from empresa_cache where cnpj = $1 and obtido_em > now() - interval '30 days'",
+        "select dados from empresa_cache where cnpj = $1 and obtido_em > now() - interval '90 days'",
         [digitos],
       );
       let e = guardada?.dados;

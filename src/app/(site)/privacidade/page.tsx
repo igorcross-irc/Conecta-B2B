@@ -36,7 +36,7 @@ export default function Privacidade() {
       </p>
 
       <h2 className="text-base font-semibold text-tinta">Retenção</h2>
-      <p>Resultados de busca ficam guardados por até 30 dias antes de serem refeitos. Ações administrativas ficam em auditoria.</p>
+      <p>Resultados de busca ficam guardados por até 90 dias antes de serem refeitos. Ações administrativas ficam em auditoria.</p>
     </article>
   );
 }
