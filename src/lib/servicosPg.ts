@@ -1,7 +1,7 @@
 import type { Db } from "@/db/conexao";
 import { buscarEmCascata, type Tentativa } from "./cascade";
 import { TABELA_CUSTOS_PADRAO, type Lancamento, type TabelaCustos } from "./credits";
-import { cnpjValido, somenteDigitos } from "./cnpj";
+import { alvoValido, chaveAlvo, cnpjValido, normalizarBusca, somenteDigitos } from "./cnpj";
 import { lerCsv, normalizarCabecalho } from "./csv";
 import { ORG_DEMO, USUARIO_DEMO } from "@/db/local";
 import { dominioSeguro } from "./providers/site";
@@ -197,7 +197,7 @@ export function criarServicosPg({
   ): Promise<{ contatos: Contato[]; tentativas: Tentativa[]; doPool: boolean }> {
     const cargos = cargosBrutos.map((c) => c.trim().toLowerCase()).filter(Boolean);
     const cargosChave = [...new Set(cargos)].sort().join(",");
-    const cnpj = somenteDigitos(empresa.cnpj);
+    const cnpj = chaveAlvo(empresa.cnpj);
     const saiu = await saiuDaBase();
     const naoSaiu = (c: Contato) => !(c.email && saiu.has(c.email.toLowerCase()));
 
@@ -358,13 +358,27 @@ export function criarServicosPg({
      * públicas, e aplica por cima o que a comunidade corrigiu (site da empresa).
      */
     async consultarEmpresa(cnpj: string): Promise<Empresa> {
-      if (!cnpjValido(cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
-      const digitos = somenteDigitos(cnpj);
+      if (!alvoValido(cnpj)) throw new ErroDeNegocio("CNPJ ou site inválido.");
+      const digitos = chaveAlvo(cnpj);
       const guardada = await um<{ dados: Empresa }>(
         "select dados from empresa_cache where cnpj = $1 and obtido_em > now() - interval '30 days'",
         [digitos],
       );
       let e = guardada?.dados;
+      if (!e && digitos.startsWith("site:")) {
+        // Alvo por site, sem CNPJ: a empresa é o próprio endereço e as fontes de contato rodam sobre ele.
+        const dom = digitos.slice(5);
+        e = {
+          cnpj: digitos, razaoSocial: dom, nomeFantasia: dom, situacao: "Pesquisa por site (sem CNPJ)",
+          telefones: [], emailsCadastrais: [], dominio: dom, socios: [], fonte: "Site informado",
+          obtidoEm: new Date().toISOString(),
+        };
+        await db.query(
+          `insert into empresa_cache (cnpj, dados, fonte) values ($1, $2, $3)
+           on conflict (cnpj) do update set dados = excluded.dados, fonte = excluded.fonte, obtido_em = now()`,
+          [digitos, JSON.stringify(e), e.fonte],
+        );
+      }
       if (!e) {
         const nova = await provedorEmpresa.buscarPorCnpj(cnpj);
         if (!nova) throw new ErroDeNegocio("Empresa não encontrada.", 404);
@@ -414,10 +428,10 @@ export function criarServicosPg({
 
     /** Guarda na base comum que este site pertence a este CNPJ, sem sobrescrever o que a comunidade já corrigiu. */
     async associarSite(cnpj: string, site: string) {
-      if (!cnpjValido(cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      if (!alvoValido(cnpj)) throw new ErroDeNegocio("CNPJ ou site inválido.");
       const dominio = dominioSeguro(site)?.replace(/^www\./, "");
       if (!dominio) return;
-      const d = somenteDigitos(cnpj);
+      const d = chaveAlvo(cnpj);
       const antes = await um<{ dominio: string | null }>("select dominio from base_empresa_info where cnpj = $1", [d]);
       if (antes?.dominio) return;
       await db.query(
@@ -432,8 +446,8 @@ export function criarServicosPg({
 
     /** Quantos contatos já estão no pool para esta empresa (grátis: é a prévia antes de gastar crédito). */
     async disponiveisNoPool(cnpj: string): Promise<number> {
-      if (!cnpjValido(cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
-      const d = somenteDigitos(cnpj);
+      if (!alvoValido(cnpj)) throw new ErroDeNegocio("CNPJ ou site inválido.");
+      const d = chaveAlvo(cnpj);
       const r = await um<{ n: number | null }>(
         `select max(jsonb_array_length(contatos))::int as n from pool_busca
           where cnpj = $1 and fonte_chave = $2 and obtido_em > now() - (${VALIDADE_SQL})`,
@@ -453,7 +467,7 @@ export function criarServicosPg({
         `busca:${params.chave}`,
       );
       const { contatos, tentativas } = await coletar(empresa, params.cargos);
-      const ids = await concluirOuEstornar(somenteDigitos(params.cnpj), contatos, cobranca.id);
+      const ids = await concluirOuEstornar(chaveAlvo(params.cnpj), contatos, cobranca.id);
       return {
         contatos: (await guardados(ids)).map(visivel),
         tentativas,
@@ -466,8 +480,8 @@ export function criarServicosPg({
      * para depois da resposta. Mesma chave devolve a mesma busca, sem cobrar de novo.
      */
     async iniciarBusca(params: { cnpj: string; cargos: string[]; chave: string }): Promise<EstadoBusca> {
-      if (!cnpjValido(params.cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
-      const cnpj = somenteDigitos(params.cnpj);
+      if (!alvoValido(params.cnpj)) throw new ErroDeNegocio("CNPJ ou site inválido.");
+      const cnpj = chaveAlvo(params.cnpj);
       const existente = await um<Linha>("select id from busca_job where organizacao_id = $1 and chave = $2", [
         org,
         params.chave,
@@ -544,12 +558,12 @@ export function criarServicosPg({
 
     /** Busca mais recente desta organização para a empresa (últimas 24 h), para retomar a tela. */
     async ultimaBusca(cnpj: string): Promise<EstadoBusca | null> {
-      if (!cnpjValido(cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      if (!alvoValido(cnpj)) throw new ErroDeNegocio("CNPJ ou site inválido.");
       await varrerBuscasPerdidas();
       const j = await um<Linha>(
         `select * from busca_job where organizacao_id = $1 and cnpj = $2 and criado_em > now() - interval '24 hours'
           order by criado_em desc limit 1`,
-        [org, somenteDigitos(cnpj)],
+        [org, chaveAlvo(cnpj)],
       );
       return j ? estadoDoJob(j) : null;
     },
@@ -721,9 +735,9 @@ export function criarServicosPg({
 
     /** Ficha da empresa na base: dados públicos, nota e tags da comunidade e a prévia grátis dos cargos disponíveis. */
     async fichaBase(cnpj: string) {
-      if (!cnpjValido(cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      if (!alvoValido(cnpj)) throw new ErroDeNegocio("CNPJ ou site inválido.");
       const empresa = await servicos.consultarEmpresa(cnpj);
-      const d = somenteDigitos(cnpj);
+      const d = chaveAlvo(cnpj);
       const info = await um<Linha>("select nota, tags, atualizado_em from base_empresa_info where cnpj = $1", [d]);
       const pool = await db.query<{ contatos: Contato[] }>(
         `select contatos from pool_busca where cnpj = $1 and obtido_em > now() - (${VALIDADE_SQL})`,
@@ -745,8 +759,8 @@ export function criarServicosPg({
 
     /** Qualquer membro pode corrigir site, nota e tags da empresa; vale para todos e fica na auditoria. */
     async atualizarInfoEmpresa(p: { cnpj: string; dominio?: string; nota?: string; tags?: string[] }) {
-      if (!cnpjValido(p.cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
-      const d = somenteDigitos(p.cnpj);
+      if (!alvoValido(p.cnpj)) throw new ErroDeNegocio("CNPJ ou site inválido.");
+      const d = chaveAlvo(p.cnpj);
       let dominio: string | null = null;
       if (p.dominio?.trim()) {
         dominio = dominioSeguro(p.dominio);
@@ -770,7 +784,7 @@ export function criarServicosPg({
     async contribuirContato(p: {
       cnpj: string; nome: string; cargo: string; email?: string; telefone?: string; linkedinUrl?: string;
     }) {
-      if (!cnpjValido(p.cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      if (!alvoValido(p.cnpj)) throw new ErroDeNegocio("CNPJ ou site inválido.");
       const nome = p.nome.trim();
       const cargo = p.cargo.trim();
       if (!nome || !cargo) throw new ErroDeNegocio("Informe nome e cargo.");
@@ -781,7 +795,7 @@ export function criarServicosPg({
       const linkedin = p.linkedinUrl?.trim() || null;
       if (linkedin && !/^https:\/\/([a-z]{2,3}\.)?linkedin\.com\/(in|company)\//i.test(linkedin))
         throw new ErroDeNegocio("Use o endereço público do perfil no LinkedIn (https://www.linkedin.com/in/...).");
-      const d = somenteDigitos(p.cnpj);
+      const d = chaveAlvo(p.cnpj);
       await db.query(
         `insert into base_contato (cnpj, nome, cargo, email, telefone, linkedin_url, contribuido_por, organizacao_id)
          values ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -997,7 +1011,7 @@ export function criarServicosPg({
         const l = linhas[n];
         const v = (i?: number) => (i === undefined ? "" : (l[i] ?? "").trim());
         const cnpj = somenteDigitos(v(iCnpj));
-        if (!cnpjValido(cnpj)) {
+        if (!alvoValido(cnpj)) {
           erros.push(`Linha ${n + 1}: CNPJ inválido.`);
           continue;
         }
