@@ -1,7 +1,7 @@
 import type { Db } from "@/db/conexao";
 import { buscarEmCascata, type Tentativa } from "./cascade";
 import { TABELA_CUSTOS_PADRAO, type Lancamento, type TabelaCustos } from "./credits";
-import { alvoValido, chaveAlvo, cnpjValido, normalizarBusca, somenteDigitos } from "./cnpj";
+import { alvoValido, chaveAlvo, normalizarBusca, somenteDigitos } from "./cnpj";
 import { lerCsv, normalizarCabecalho } from "./csv";
 import { ORG_DEMO, USUARIO_DEMO } from "@/db/local";
 import { dominioSeguro } from "./providers/site";

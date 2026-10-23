@@ -74,3 +74,14 @@ O parágrafo de abertura de docs/especificacao-funcional.md ainda diz que o site
   - Apresentação comercial (10 slides): artefato Slides https://claude.ai/artifact/K9oRarR2wLbT48rBvvLqNi (privado até o Igor compartilhar). Preços estão como [__]: decisão comercial pendente.
   - AÇÃO DO IGOR: (1) criar a conta em https://conecta-b2b.vercel.app/entrar?novo=1; (2) me dizer o e-mail para virar operadora (SQL: `insert into operadora select id from neon_auth."user" where email='...'`); (3) testar o fluxo e rodar `npx tsx scripts/testar-provedores.ts docs/modelo-cnpjs.csv` na máquina dele para validar os formatos reais de BrasilAPI/CNPJá/sites; (4) revisão jurídica da página de privacidade.
   - Pendentes: papel de banco limitado (hoje o app conecta como dono do banco e ignora RLS); confirmação do opt-out por e-mail; envio de e-mail dos convites (hoje por link); descoberta de pessoas/LinkedIn por busca na web; verificação de e-mail por MX; PNCP/IBGE; login real não verificado no Neon Auth (não testado de ponta a ponta).
+
+## 23/10 (tarde, parte 2) — site como alvo, pesquisa avançada, IA e Receita
+
+- **Bug corrigido:** `garantirDemo` só roda sem `NEON_AUTH_BASE_URL` (antes criava usuário/org/20 créditos de demo no Neon de produção; dados apagados).
+- **Busca por site:** `SiteEmpresa.descobrirCnpjs`, `resolverSite`, `associarSite`, `/api/empresa?site=`.
+- **Alvo = CNPJ ou site** (migração `0005_alvo_e_receita.sql`, já aplicada no Neon): chave `site:dominio.com.br` aceita em empresa_cache, contato, pool_busca, busca_job, base_*. Helpers em `src/lib/cnpj.ts` (`normalizarAlvo`, `chaveAlvo`, `alvoValido`, `normalizarBusca`). Em Descobrir, digitar um site pesquisa direto pelo site; botão "Procurar o CNPJ deste site" é opcional.
+- **Pesquisa avançada:** página `/pesquisar` + `servicos.pesquisar()` (nome, outros termos, UF, cidade, bairro, segmento/CNAE, filiais) sobre `rf_estabelecimento`/`rf_cnae` + sites conhecidos. Sem a base da Receita carregada, a página avisa.
+- **Base da Receita:** `scripts/importar-receita.ts` e workflow `.github/workflows/importar-receita.yml` (Actions → "Importar Receita", inputs ufs/mes/filiais). **Pendente (Igor):** criar o secret `DATABASE_URL` no GitHub (connection string do Neon) e disparar. URL base: `https://dadosabertos.rfb.gov.br/CNPJ/dados_abertos_cnpj/<AAAA-MM>/` (não verificada do sandbox). `db/neon/0006_busca_trigram.sql` (pg_trgm) já aplicado.
+- **Teste de IA:** `/admin/ia` (só operadora), `src/lib/ia/gemini.ts`; lê `GEMINI_API_KEY` (ou `GOOGLE_API_KEY`), `GEMINI_MODEL` opcional; lista modelos e escolhe flash-lite mais novo.
+- **Não verificado (sandbox sem internet):** formatos reais das APIs, download da Receita, resposta real do Gemini.
+- **Próximos:** descoberta de pessoas por busca web (Tavily/Serper + Gemini), verificação de e-mail (MX), papel de banco sem owner, e-mails de convite/opt-out.

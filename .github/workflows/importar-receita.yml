@@ -1,0 +1,30 @@
+name: Importar Receita
+on:
+  workflow_dispatch:
+    inputs:
+      ufs:
+        description: "UFs separadas por vírgula (ex.: RJ ou RJ,SP)"
+        default: "RJ"
+      mes:
+        description: "Mês da base (AAAA-MM). Vazio = automático"
+        default: ""
+      filiais:
+        description: "Incluir filiais? (true/false)"
+        default: "false"
+jobs:
+  importar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - name: Importar
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          ARGS="--ufs=${{ inputs.ufs }}"
+          if [ -n "${{ inputs.mes }}" ]; then ARGS="$ARGS --mes=${{ inputs.mes }}"; fi
+          if [ "${{ inputs.filiais }}" = "true" ]; then ARGS="$ARGS --filiais"; fi
+          npx tsx scripts/importar-receita.ts $ARGS
