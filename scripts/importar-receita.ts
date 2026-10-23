@@ -5,12 +5,15 @@
  *
  * Baixa Cnaes, Municipios, Empresas0-9 e Estabelecimentos0-9 de https://dadosabertos.rfb.gov.br/CNPJ/dados_abertos_cnpj/<mes>/
  * (ou usa os .zip já presentes em --dir) e carrega só as UFs pedidas, apenas ativas e, por padrão, só matrizes.
- * Precisa de `curl` e `unzip` no sistema. Reexecutar é seguro (upsert).
+ * Funciona em Windows, Mac e Linux (só precisa de Node 22). O servidor da Receita só responde a conexões do Brasil: rode no seu computador.
+ * Reexecutar é seguro (upsert) e os .zip já baixados em --dir são reaproveitados.
  * Layout dos arquivos: ';' como separador, ISO-8859-1, sem cabeçalho (documentado pela Receita).
  */
-import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { existsSync, mkdirSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, renameSync } from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import unzipper from "unzipper";
 import { Client } from "pg";
 
 const arg = (n: string) => process.argv.find((a) => a.startsWith(`--${n}=`))?.split("=")[1];
@@ -23,25 +26,38 @@ const BASE = process.env.RFB_BASE ?? "https://dadosabertos.rfb.gov.br/CNPJ/dados
 const norm = (v: string) => v.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const PORTE: Record<string, string> = { "00": "Não informado", "01": "Micro empresa", "03": "Empresa de pequeno porte", "05": "Demais" };
 
-function executar(cmd: string, args: string[]): Promise<void> {
-  return new Promise((ok, falha) => {
-    const p = spawn(cmd, args, { stdio: "inherit" });
-    p.on("exit", (c) => (c === 0 ? ok() : falha(new Error(`${cmd} saiu com ${c}`))));
-  });
+async function baixar(url: string, destino: string): Promise<void> {
+  for (let tentativa = 1; tentativa <= 6; tentativa++) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(30 * 60 * 1000) });
+      if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
+      await pipeline(Readable.fromWeb(r.body as never), createWriteStream(destino + ".parcial"));
+      renameSync(destino + ".parcial", destino);
+      return;
+    } catch (e) {
+      console.log(`Falha ao baixar ${url} (tentativa ${tentativa}/6): ${(e as Error).message}`);
+      if (tentativa === 6) throw e;
+      await new Promise((ok) => setTimeout(ok, 3000 * tentativa));
+    }
+  }
 }
 
 async function garantir(nome: string): Promise<string> {
   mkdirSync(dir, { recursive: true });
   const f = `${dir}/${nome}.zip`;
-  if (!existsSync(f)) await executar("curl", ["-fL", "--retry", "5", "-o", f, `${BASE}/${mes}/${nome}.zip`]);
+  if (!existsSync(f)) {
+    console.log(`Baixando ${nome}…`);
+    await baixar(`${BASE}/${mes}/${nome}.zip`, f);
+  }
   return f;
 }
 
-/** Lê as linhas de um .zip (CSV em latin1) sem gravar o CSV em disco. */
+/** Lê as linhas de um .zip (CSV em latin1) em fluxo, sem gravar o CSV em disco. */
 async function* linhas(zip: string): AsyncGenerator<string[]> {
-  const p = spawn("unzip", ["-p", zip], { stdio: ["ignore", "pipe", "inherit"] });
-  p.stdout.setEncoding("latin1");
-  const rl = createInterface({ input: p.stdout, crlfDelay: Infinity });
+  const d = await unzipper.Open.file(zip);
+  const entrada = d.files.find((x) => x.type === "File");
+  if (!entrada) return;
+  const rl = createInterface({ input: entrada.stream().setEncoding("latin1"), crlfDelay: Infinity });
   for await (const l of rl) yield l.split(";").map((c) => c.replace(/^"|"$/g, ""));
 }
 
