@@ -279,3 +279,142 @@ describe("pool compartilhado e busca em segundo plano", () => {
     expect(r.contatos.some((c) => c.temEmail && c.emailMascarado?.includes("pessoa.a"))).toBe(false);
   });
 });
+
+describe("equipe, convites e acesso", () => {
+  const OUTRO = "00000000-0000-0000-0000-0000000000f2";
+
+  async function comOutroUsuario() {
+    const { db, s } = await novo();
+    await db.query("insert into auth.users values ($1)", [OUTRO]);
+    await db.query(`insert into neon_auth."user" (id, name, email) values ($1, 'Outra Pessoa', 'outra@empresa.com.br')`, [OUTRO]);
+    return { db, s };
+  }
+  const como = (db: Awaited<ReturnType<typeof novo>>["db"], u: string) =>
+    db.query("select set_config('request.jwt.sub', $1, false)", [u]);
+
+  it("convite por link: admin convida, outra pessoa aceita e entra com o papel combinado", async () => {
+    const { db, s } = await comOutroUsuario();
+    const token = await s.convidar("Outra@Empresa.com.br", "membro");
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    expect((await s.equipe()).convites.map((c) => c.email)).toEqual(["outra@empresa.com.br"]);
+
+    await como(db, OUTRO);
+    const sOutro = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [], ator: { usuarioId: OUTRO, papel: "membro", operadora: false } });
+    expect(await sOutro.aceitarConvite(token)).toBe("00000000-0000-0000-0000-0000000000d0");
+    // Uso único.
+    await expect(sOutro.aceitarConvite(token)).rejects.toMatchObject({ status: 404 });
+    await expect(sOutro.aceitarConvite("naoexiste")).rejects.toMatchObject({ status: 404 });
+
+    await como(db, USUARIO_DEMO);
+    const eq = await s.equipe();
+    expect(eq.convites).toHaveLength(0);
+    expect(eq.membros.map((m) => [m.email, m.papel])).toContainEqual(["outra@empresa.com.br", "membro"]);
+  });
+
+  it("membro comum não administra a equipe", async () => {
+    const { db } = await comOutroUsuario();
+    const m = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [], ator: { usuarioId: OUTRO, papel: "membro", operadora: false } });
+    await expect(m.convidar("a@b.com", "membro")).rejects.toMatchObject({ status: 403 });
+    await expect(m.alterarPapel(OUTRO, "administrador")).rejects.toMatchObject({ status: 403 });
+    await expect(m.renomearOrganizacao("x")).rejects.toMatchObject({ status: 403 });
+    await expect(m.adminResumo()).rejects.toMatchObject({ status: 403 });
+    await expect(m.adminRecarregar(OUTRO, 5, "x")).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("não deixa a organização sem administrador", async () => {
+    const { s } = await comOutroUsuario();
+    await expect(s.alterarPapel(USUARIO_DEMO, "membro")).rejects.toMatchObject({ status: 409 });
+    await expect(s.removerMembro(USUARIO_DEMO)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("promove, rebaixa e remove membros, e registra na auditoria", async () => {
+    const { db, s } = await comOutroUsuario();
+    await db.query("insert into membro values ($1, $2, 'membro')", ["00000000-0000-0000-0000-0000000000d0", OUTRO]);
+    await s.alterarPapel(OUTRO, "administrador");
+    await s.alterarPapel(USUARIO_DEMO, "membro"); // agora há outro administrador
+    await s.removerMembro(USUARIO_DEMO);
+    const acoes = (await criarServicosPg({ db, empresa: provedorEmpresa, contatos: [], ator: { usuarioId: OUTRO, papel: "administrador", operadora: false } }).auditoriaRecente()).map((a) => a.acao);
+    expect(acoes).toEqual(expect.arrayContaining(["equipe.papel", "equipe.remover"]));
+  });
+
+  it("operadora recarrega créditos e muda custos; valores inválidos são recusados", async () => {
+    const { s } = await novo();
+    const antes = await s.saldo();
+    await s.adminRecarregar("00000000-0000-0000-0000-0000000000d0", 50, "teste");
+    expect(await s.saldo()).toBe(antes + 50);
+    await expect(s.adminRecarregar("00000000-0000-0000-0000-0000000000d0", -1, "x")).rejects.toThrow();
+    await s.adminAtualizarCustos("00000000-0000-0000-0000-0000000000d0", { busca_decisores: 2, revelar_email: 3, revelar_telefone: 7 });
+    expect((await s.custos()).busca_decisores).toBe(2);
+    await expect(s.adminAtualizarCustos("00000000-0000-0000-0000-0000000000d0", { busca_decisores: 0, revelar_email: 1, revelar_telefone: 1 })).rejects.toThrow();
+    const resumo = await s.adminResumo();
+    expect(resumo.organizacoes).toBeGreaterThanOrEqual(1);
+    expect((await s.adminOrganizacoes())[0].saldo).toBe(antes + 50);
+  });
+});
+
+describe("base colaborativa", () => {
+  it("empresa consultada fica na base compartilhada e a API pública não é chamada de novo", async () => {
+    let chamadas = 0;
+    const db = await abrirBancoLocal("memory://", 20);
+    const s = criarServicosPg({ db, empresa: { nome: "x", buscarPorCnpj: async () => { chamadas++; return empresa; } }, contatos: [] });
+    await s.consultarEmpresa("33000167000101");
+    await s.consultarEmpresa("33000167000101");
+    expect(chamadas).toBe(1);
+    const base = await s.listarBase({ q: "teste" });
+    expect(base.total).toBe(1);
+    expect(base.itens[0].razaoSocial).toBe("EMPRESA DE TESTE SA");
+    expect((await s.listarBase({ q: "inexistente" })).total).toBe(0);
+    expect((await s.listarBase({ uf: "SP" })).total).toBe(0);
+  });
+
+  it("correção de site vale para todos e descarta varreduras antigas", async () => {
+    const { db, s } = await novo();
+    await s.buscarDecisores({ cnpj: "33000167000101", cargos: [], chave: "a" });
+    expect((await db.query("select count(*)::int c from pool_busca")).rows[0]).toEqual({ c: 1 });
+    await s.atualizarInfoEmpresa({ cnpj: "33000167000101", dominio: "https://www.Teste.com.br/contato", nota: "Matriz em SP", tags: ["Alimentos", "alimentos", "varejo"] });
+    expect((await db.query("select count(*)::int c from pool_busca")).rows[0]).toEqual({ c: 0 });
+    expect((await s.consultarEmpresa("33000167000101")).dominio).toBe("www.teste.com.br");
+    const ficha = await s.fichaBase("33000167000101");
+    expect(ficha.nota).toBe("Matriz em SP");
+    expect(ficha.tags).toEqual(["alimentos", "varejo"]);
+    await expect(s.atualizarInfoEmpresa({ cnpj: "33000167000101", dominio: "http://127.0.0.1" })).rejects.toThrow(/Site inválido/);
+  });
+
+  it("contato contribuído entra nas buscas de qualquer organização, e a prévia mostra só cargos", async () => {
+    const { s } = await novo();
+    await s.contribuirContato({ cnpj: "33000167000101", nome: "Joana Prado", cargo: "Diretora de Compras", email: "joana@teste.com.br", linkedinUrl: "https://www.linkedin.com/in/joana-prado" });
+    await expect(s.contribuirContato({ cnpj: "33000167000101", nome: "X", cargo: "Y", linkedinUrl: "https://evil.com/in/x" })).rejects.toThrow(/LinkedIn/);
+    const ficha = await s.fichaBase("33000167000101");
+    expect(JSON.stringify(ficha)).not.toContain("Joana");
+    expect(ficha.cargosDisponiveis).toContainEqual({ cargo: "Diretora de Compras", quantidade: 1 });
+    expect(await s.disponiveisNoPool("33000167000101")).toBe(1);
+    const r = await s.buscarDecisores({ cnpj: "33000167000101", cargos: [], chave: "c" });
+    const joana = r.contatos.find((c) => c.nome === "Joana Prado");
+    expect(joana?.origem).toMatch(/base comum/);
+    expect(joana?.email).toBeUndefined(); // continua oculto até pagar a revelação
+  });
+
+  it("opt-out também tira a pessoa da base comum e impede nova contribuição", async () => {
+    const { s } = await novo();
+    await s.contribuirContato({ cnpj: "33000167000101", nome: "Joana Prado", cargo: "Diretora", email: "joana@teste.com.br" });
+    await s.registrarOptOut("joana@teste.com.br");
+    expect(await s.disponiveisNoPool("33000167000101")).toBe(0);
+    await expect(s.contribuirContato({ cnpj: "33000167000101", nome: "Joana", cargo: "Diretora", email: "joana@teste.com.br" })).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("importação com 'compartilhar' envia à base comum; sem a opção, não", async () => {
+    const { db, s } = await novo();
+    const csv = "cnpj,nome,cargo,email\n33000167000101,Pedro Alves,Gerente,pedro@teste.com.br";
+    await s.importarContatos(csv);
+    expect((await db.query("select count(*)::int c from base_contato")).rows[0]).toEqual({ c: 0 });
+    await s.importarContatos(csv, { compartilhar: true });
+    expect((await db.query("select count(*)::int c from base_contato")).rows[0]).toEqual({ c: 1 });
+  });
+
+  it("buscas recentes listam a empresa pelo nome", async () => {
+    const { s } = await novo();
+    const j = await s.iniciarBusca({ cnpj: "33000167000101", cargos: [], chave: "r" });
+    await s.executarBusca(j.id);
+    expect((await s.buscasRecentes())[0]).toMatchObject({ empresa: "EMPRESA DE TESTE SA", status: "concluida" });
+  });
+});

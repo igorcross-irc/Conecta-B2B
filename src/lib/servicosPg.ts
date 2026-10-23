@@ -3,7 +3,8 @@ import { buscarEmCascata, type Tentativa } from "./cascade";
 import { TABELA_CUSTOS_PADRAO, type Lancamento, type TabelaCustos } from "./credits";
 import { cnpjValido, somenteDigitos } from "./cnpj";
 import { lerCsv, normalizarCabecalho } from "./csv";
-import { ORG_DEMO } from "@/db/local";
+import { ORG_DEMO, USUARIO_DEMO } from "@/db/local";
+import { dominioSeguro } from "./providers/site";
 import type { Contato, Empresa, ProvedorContatos, ProvedorEmpresa } from "./providers/types";
 import {
   celulaCsv,
@@ -36,8 +37,45 @@ export interface ListaPg {
   contatoIds: string[];
 }
 
+/** Quem está agindo: define o que pode fazer (administrador da organização, operadora da plataforma). */
+export interface Ator {
+  usuarioId: string;
+  papel: "administrador" | "membro";
+  operadora: boolean;
+}
+
+export interface Membro {
+  usuarioId: string;
+  nome?: string;
+  email?: string;
+  papel: "administrador" | "membro";
+}
+
+export interface ConvitePendente {
+  id: string;
+  email: string;
+  papel: "administrador" | "membro";
+  criadoEm: string;
+  expiraEm: string;
+}
+
+export interface ItemBase {
+  cnpj: string;
+  razaoSocial: string;
+  nomeFantasia?: string;
+  municipio?: string;
+  uf?: string;
+  atividade?: string;
+  dominio?: string;
+  noPool: number;
+  daComunidade: number;
+  tags: string[];
+  atualizadoEm: string;
+}
+
 interface Dependencias {
   db: Db;
+  ator?: Ator;
   empresa: ProvedorEmpresa;
   contatos: ProvedorContatos[];
   org?: string;
@@ -55,6 +93,9 @@ function traduzir(e: unknown): never {
     throw new ErroDeNegocio("Este contato não tem esse dado. Nada foi cobrado.", 404);
   if (/sem acesso/.test(msg)) throw new ErroDeNegocio("Sem acesso a esta organização.", 403);
   if (/não encontrado/.test(msg)) throw new ErroDeNegocio("Contato não encontrado.", 404);
+  if (/convite inválido/.test(msg)) throw new ErroDeNegocio("Convite inválido ou expirado.", 404);
+  if (/ao menos um administrador/.test(msg))
+    throw new ErroDeNegocio("A organização precisa de ao menos um administrador.", 409);
   throw e;
 }
 
@@ -91,7 +132,18 @@ export function criarServicosPg({
   empresa: provedorEmpresa,
   contatos: provedores,
   org = ORG_DEMO,
+  ator = { usuarioId: USUARIO_DEMO, papel: "administrador", operadora: true },
 }: Dependencias) {
+  const exigirAdmin = () => {
+    if (ator.papel !== "administrador") throw new ErroDeNegocio("Apenas administradores podem fazer isso.", 403);
+  };
+  const exigirOperadora = () => {
+    if (!ator.operadora) throw new ErroDeNegocio("Apenas a operadora da plataforma pode fazer isso.", 403);
+  };
+  const auditar = (acao: string, alvo: string | null, detalhe: Record<string, unknown> = {}) =>
+    db.query("insert into auditoria (usuario_id, organizacao_id, acao, alvo, detalhe) values ($1,$2,$3,$4,$5::jsonb)", [
+      ator.usuarioId, org, acao, alvo, JSON.stringify(detalhe),
+    ]);
 
   async function um<T extends Linha = Linha>(sql: string, params: unknown[] = []): Promise<T | undefined> {
     return (await db.query<T>(sql, params)).rows[0];
@@ -146,12 +198,37 @@ export function criarServicosPg({
     const saiu = await saiuDaBase();
     const naoSaiu = (c: Contato) => !(c.email && saiu.has(c.email.toLowerCase()));
 
+    const comunidade = (await db.query<Linha>(
+      "select * from base_contato where cnpj = $1 order by criado_em",
+      [cnpj],
+    )).rows
+      .map((r): Contato => ({
+        nome: r.nome as string,
+        cargo: r.cargo as string,
+        senioridade: (r.senioridade as string) ?? undefined,
+        departamento: (r.departamento as string) ?? undefined,
+        email: (r.email as string) ?? undefined,
+        emailStatus: r.email ? "nao_verificado" : undefined,
+        telefone: (r.telefone as string) ?? undefined,
+        linkedinUrl: (r.linkedin_url as string) ?? undefined,
+        origem: `${r.origem as string} (base comum)`,
+        obtidoEm: new Date(r.criado_em as string).toISOString(),
+        confianca: 0.6,
+      }))
+      .filter(naoSaiu);
+    const juntar = (lista: Contato[]) => {
+      const vistos = new Set(lista.map((c) => `${c.nome}|${c.cargo}`.toLowerCase()));
+      return [...lista, ...comunidade.filter((c) => !vistos.has(`${c.nome}|${c.cargo}`.toLowerCase()))];
+    };
+
     const cache = await um<{ contatos: Contato[]; tentativas: Tentativa[] }>(
       `select contatos, tentativas from pool_busca
         where cnpj = $1 and fonte_chave = $2 and cargos_chave = $3 and obtido_em > now() - (${VALIDADE_SQL})`,
       [cnpj, fonteChave, cargosChave],
     );
-    if (cache) return { contatos: cache.contatos.filter(naoSaiu), tentativas: cache.tentativas, doPool: true };
+    if (cache) {
+      return { contatos: juntar(cache.contatos.filter(naoSaiu)), tentativas: cache.tentativas, doPool: true };
+    }
 
     const { contatos, tentativas } = await buscarEmCascata(
       provedores,
@@ -168,7 +245,7 @@ export function criarServicosPg({
         [cnpj, fonteChave, cargosChave, JSON.stringify(contatos), JSON.stringify(tentativas)],
       );
     }
-    return { contatos, tentativas, doPool: false };
+    return { contatos: juntar(contatos), tentativas, doPool: false };
   }
 
   /** Estorna se nada foi encontrado; senão grava os contatos na organização e devolve os ids. */
@@ -273,27 +350,43 @@ export function criarServicosPg({
       }));
     },
 
+    /**
+     * Empresa pelo CNPJ. Reaproveita a base compartilhada (empresa_cache, 30 dias) antes de chamar as APIs
+     * públicas, e aplica por cima o que a comunidade corrigiu (site da empresa).
+     */
     async consultarEmpresa(cnpj: string): Promise<Empresa> {
       if (!cnpjValido(cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
-      const e = await provedorEmpresa.buscarPorCnpj(cnpj);
-      if (!e) throw new ErroDeNegocio("Empresa não encontrada.", 404);
-      await db.query(
-        `insert into empresa_cache (cnpj, dados, fonte) values ($1, $2, $3)
-         on conflict (cnpj) do update set dados = excluded.dados, fonte = excluded.fonte, obtido_em = now()`,
-        [somenteDigitos(cnpj), JSON.stringify(e), e.fonte],
+      const digitos = somenteDigitos(cnpj);
+      const guardada = await um<{ dados: Empresa }>(
+        "select dados from empresa_cache where cnpj = $1 and obtido_em > now() - interval '30 days'",
+        [digitos],
       );
-      return e;
+      let e = guardada?.dados;
+      if (!e) {
+        const nova = await provedorEmpresa.buscarPorCnpj(cnpj);
+        if (!nova) throw new ErroDeNegocio("Empresa não encontrada.", 404);
+        await db.query(
+          `insert into empresa_cache (cnpj, dados, fonte) values ($1, $2, $3)
+           on conflict (cnpj) do update set dados = excluded.dados, fonte = excluded.fonte, obtido_em = now()`,
+          [digitos, JSON.stringify(nova), nova.fonte],
+        );
+        e = nova;
+      }
+      const info = await um<{ dominio: string | null }>("select dominio from base_empresa_info where cnpj = $1", [digitos]);
+      return info?.dominio ? { ...e, dominio: info.dominio } : e;
     },
 
     /** Quantos contatos já estão no pool para esta empresa (grátis: é a prévia antes de gastar crédito). */
     async disponiveisNoPool(cnpj: string): Promise<number> {
       if (!cnpjValido(cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      const d = somenteDigitos(cnpj);
       const r = await um<{ n: number | null }>(
         `select max(jsonb_array_length(contatos))::int as n from pool_busca
           where cnpj = $1 and fonte_chave = $2 and obtido_em > now() - (${VALIDADE_SQL})`,
-        [somenteDigitos(cnpj), fonteChave],
+        [d, fonteChave],
       );
-      return r?.n ?? 0;
+      const c = await um<{ n: number }>("select count(*)::int as n from base_contato where cnpj = $1", [d]);
+      return (r?.n ?? 0) + (c?.n ?? 0);
     },
 
     /** Busca síncrona (espera o resultado). A interface com tela usa iniciarBusca + statusBusca. */
@@ -407,6 +500,328 @@ export function criarServicosPg({
       return j ? estadoDoJob(j) : null;
     },
 
+    // ───────────── Organização, equipe e acesso ─────────────
+
+    async organizacao() {
+      const o = await um<{ id: string; nome: string; criado_em: string }>(
+        "select id, nome, criado_em from organizacao where id = $1",
+        [org],
+      );
+      return {
+        id: o!.id,
+        nome: o!.nome,
+        criadaEm: new Date(o!.criado_em).toISOString(),
+        saldo: await saldo(),
+        custos: await servicos.custos(),
+      };
+    },
+
+    async renomearOrganizacao(nome: string) {
+      exigirAdmin();
+      if (!nome.trim()) throw new ErroDeNegocio("Informe o nome da organização.");
+      await db.query("select renomear_organizacao($1,$2)", [org, nome]);
+      await auditar("organizacao.renomear", org, { nome: nome.trim() });
+    },
+
+    async equipe(): Promise<{ membros: Membro[]; convites: ConvitePendente[] }> {
+      const m = await db.query<Linha>(
+        `select m.usuario_id, m.papel, u.name, u.email
+           from membro m left join neon_auth."user" u on u.id = m.usuario_id
+          where m.organizacao_id = $1 order by m.papel, u.name nulls last, m.usuario_id`,
+        [org],
+      );
+      const c = ator.papel === "administrador"
+        ? await db.query<Linha>(
+            `select id, email, papel, criado_em, expira_em from convite
+              where organizacao_id = $1 and aceito_em is null and expira_em > now() order by criado_em desc`,
+            [org],
+          )
+        : { rows: [] as Linha[] };
+      return {
+        membros: m.rows.map((r) => ({
+          usuarioId: r.usuario_id as string,
+          nome: (r.name as string) ?? undefined,
+          email: (r.email as string) ?? undefined,
+          papel: r.papel as Membro["papel"],
+        })),
+        convites: c.rows.map((r) => ({
+          id: r.id as string,
+          email: r.email as string,
+          papel: r.papel as ConvitePendente["papel"],
+          criadoEm: new Date(r.criado_em as string).toISOString(),
+          expiraEm: new Date(r.expira_em as string).toISOString(),
+        })),
+      };
+    },
+
+    /** Cria um convite e devolve o token do link. O link é secreto: quem o tiver entra na organização. */
+    async convidar(email: string, papel: "administrador" | "membro"): Promise<string> {
+      exigirAdmin();
+      const e = email.trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new ErroDeNegocio("E-mail inválido.");
+      if (papel !== "administrador" && papel !== "membro") throw new ErroDeNegocio("Papel inválido.");
+      const r = await um<{ t: string }>("select criar_convite($1,$2,$3) as t", [org, e, papel]);
+      await auditar("equipe.convidar", e, { papel });
+      return r!.t;
+    },
+
+    async revogarConvite(id: string) {
+      exigirAdmin();
+      if (!UUID.test(id)) throw new ErroDeNegocio("Convite não encontrado.", 404);
+      await db.query("delete from convite where id = $1 and organizacao_id = $2 and aceito_em is null", [id, org]);
+      await auditar("equipe.revogar_convite", id);
+    },
+
+    async alterarPapel(usuarioId: string, papel: "administrador" | "membro") {
+      exigirAdmin();
+      if (!UUID.test(usuarioId) || (papel !== "administrador" && papel !== "membro")) throw new ErroDeNegocio("Dados inválidos.");
+      try {
+        await db.query("update membro set papel = $3 where organizacao_id = $1 and usuario_id = $2", [org, usuarioId, papel]);
+      } catch (e) {
+        traduzir(e);
+      }
+      await auditar("equipe.papel", usuarioId, { papel });
+    },
+
+    async removerMembro(usuarioId: string) {
+      exigirAdmin();
+      if (!UUID.test(usuarioId)) throw new ErroDeNegocio("Dados inválidos.");
+      try {
+        await db.query("delete from membro where organizacao_id = $1 and usuario_id = $2", [org, usuarioId]);
+      } catch (e) {
+        traduzir(e);
+      }
+      await auditar("equipe.remover", usuarioId);
+    },
+
+    /** Aceita um convite em nome do usuário logado e devolve a organização em que ele entrou. */
+    async aceitarConvite(token: string): Promise<string> {
+      try {
+        const r = await um<{ o: string }>("select aceitar_convite($1) as o", [token]);
+        return r!.o;
+      } catch (e) {
+        return traduzir(e);
+      }
+    },
+
+    async auditoriaRecente(limite = 50) {
+      exigirAdmin();
+      const r = await db.query<Linha>(
+        `select a.criado_em, a.acao, a.alvo, a.detalhe, u.name, u.email
+           from auditoria a left join neon_auth."user" u on u.id = a.usuario_id
+          where a.organizacao_id = $1 order by a.id desc limit $2`,
+        [org, limite],
+      );
+      return r.rows.map((x) => ({
+        quando: new Date(x.criado_em as string).toISOString(),
+        acao: x.acao as string,
+        alvo: (x.alvo as string) ?? undefined,
+        detalhe: x.detalhe as Record<string, unknown>,
+        quem: ((x.name as string) || (x.email as string)) ?? undefined,
+      }));
+    },
+
+    // ───────────── Base colaborativa ─────────────
+
+    /** Empresas já pesquisadas por qualquer usuário, com o que se sabe delas. Só dados públicos e contagens. */
+    async listarBase(f: { q?: string; uf?: string; pagina?: number } = {}): Promise<{ itens: ItemBase[]; total: number }> {
+      const q = (f.q ?? "").trim();
+      const uf = (f.uf ?? "").trim().toUpperCase();
+      const pagina = Math.max(0, Math.floor(f.pagina ?? 0));
+      const digitos = q.replace(/\D/g, "");
+      const filtro = `
+        ($1 = '' or e.dados->>'razaoSocial' ilike '%' || $1 || '%' or e.dados->>'nomeFantasia' ilike '%' || $1 || '%'
+           or e.dados->'cnaePrincipal'->>'descricao' ilike '%' || $1 || '%'
+           or e.dados->>'municipio' ilike '%' || $1 || '%'
+           or ($2 <> '' and e.cnpj like $2 || '%'))
+        and ($3 = '' or e.dados->>'uf' = $3)`;
+      const total = await um<{ n: number }>(`select count(*)::int as n from empresa_cache e where ${filtro}`, [q, digitos, uf]);
+      const r = await db.query<Linha>(
+        `select e.cnpj, e.dados, e.obtido_em, i.dominio, i.tags, i.atualizado_em,
+                coalesce((select max(jsonb_array_length(p.contatos)) from pool_busca p where p.cnpj = e.cnpj), 0)::int as no_pool,
+                (select count(*)::int from base_contato b where b.cnpj = e.cnpj) as da_comunidade
+           from empresa_cache e left join base_empresa_info i on i.cnpj = e.cnpj
+          where ${filtro} order by e.obtido_em desc limit 24 offset $4`,
+        [q, digitos, uf, pagina * 24],
+      );
+      return {
+        total: total?.n ?? 0,
+        itens: r.rows.map((x) => {
+          const d = x.dados as Empresa;
+          return {
+            cnpj: x.cnpj as string,
+            razaoSocial: d.razaoSocial,
+            nomeFantasia: d.nomeFantasia,
+            municipio: d.municipio,
+            uf: d.uf,
+            atividade: d.cnaePrincipal?.descricao,
+            dominio: (x.dominio as string) ?? d.dominio,
+            noPool: Number(x.no_pool),
+            daComunidade: Number(x.da_comunidade),
+            tags: (x.tags as string[]) ?? [],
+            atualizadoEm: new Date((x.atualizado_em as string) ?? (x.obtido_em as string)).toISOString(),
+          };
+        }),
+      };
+    },
+
+    /** Ficha da empresa na base: dados públicos, nota e tags da comunidade e a prévia grátis dos cargos disponíveis. */
+    async fichaBase(cnpj: string) {
+      if (!cnpjValido(cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      const empresa = await servicos.consultarEmpresa(cnpj);
+      const d = somenteDigitos(cnpj);
+      const info = await um<Linha>("select nota, tags, atualizado_em from base_empresa_info where cnpj = $1", [d]);
+      const pool = await db.query<{ contatos: Contato[] }>(
+        `select contatos from pool_busca where cnpj = $1 and obtido_em > now() - (${VALIDADE_SQL})`,
+        [d],
+      );
+      const com = await db.query<Linha>("select cargo, senioridade from base_contato where cnpj = $1", [d]);
+      const cargos = new Map<string, number>();
+      for (const c of pool.rows.flatMap((x) => x.contatos))
+        cargos.set(c.cargo, (cargos.get(c.cargo) ?? 0) + 1);
+      for (const c of com.rows) cargos.set(c.cargo as string, (cargos.get(c.cargo as string) ?? 0) + 1);
+      return {
+        empresa,
+        nota: (info?.nota as string) ?? undefined,
+        tags: (info?.tags as string[]) ?? [],
+        cargosDisponiveis: [...cargos].map(([cargo, quantidade]) => ({ cargo, quantidade })),
+        disponiveis: await servicos.disponiveisNoPool(d),
+      };
+    },
+
+    /** Qualquer membro pode corrigir site, nota e tags da empresa; vale para todos e fica na auditoria. */
+    async atualizarInfoEmpresa(p: { cnpj: string; dominio?: string; nota?: string; tags?: string[] }) {
+      if (!cnpjValido(p.cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      const d = somenteDigitos(p.cnpj);
+      let dominio: string | null = null;
+      if (p.dominio?.trim()) {
+        dominio = dominioSeguro(p.dominio);
+        if (!dominio) throw new ErroDeNegocio("Site inválido. Use algo como empresa.com.br.");
+      }
+      const tags = [...new Set((p.tags ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean))].slice(0, 12);
+      const nota = (p.nota ?? "").trim().slice(0, 500) || null;
+      const antes = await um<{ dominio: string | null }>("select dominio from base_empresa_info where cnpj = $1", [d]);
+      await db.query(
+        `insert into base_empresa_info (cnpj, dominio, nota, tags, atualizado_por) values ($1,$2,$3,$4,$5)
+         on conflict (cnpj) do update set dominio = excluded.dominio, nota = excluded.nota, tags = excluded.tags,
+           atualizado_por = excluded.atualizado_por, atualizado_em = now()`,
+        [d, dominio, nota, tags, ator.usuarioId],
+      );
+      // Mudou o site: as varreduras guardadas usaram o site antigo, então são descartadas.
+      if ((antes?.dominio ?? null) !== dominio) await db.query("delete from pool_busca where cnpj = $1", [d]);
+      await auditar("base.empresa", d, { dominio, nota, tags });
+    },
+
+    /** Contribui com um contato para a base comum (visível a todos como resultado de busca, mediante crédito). */
+    async contribuirContato(p: {
+      cnpj: string; nome: string; cargo: string; email?: string; telefone?: string; linkedinUrl?: string;
+    }) {
+      if (!cnpjValido(p.cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      const nome = p.nome.trim();
+      const cargo = p.cargo.trim();
+      if (!nome || !cargo) throw new ErroDeNegocio("Informe nome e cargo.");
+      const email = p.email?.trim().toLowerCase() || null;
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new ErroDeNegocio("E-mail inválido.");
+      if (email && (await um("select 1 from opt_out where email = $1", [email])))
+        throw new ErroDeNegocio("Este e-mail pediu para não ser contatado e não pode ser adicionado.", 409);
+      const linkedin = p.linkedinUrl?.trim() || null;
+      if (linkedin && !/^https:\/\/([a-z]{2,3}\.)?linkedin\.com\/(in|company)\//i.test(linkedin))
+        throw new ErroDeNegocio("Use o endereço público do perfil no LinkedIn (https://www.linkedin.com/in/...).");
+      const d = somenteDigitos(p.cnpj);
+      await db.query(
+        `insert into base_contato (cnpj, nome, cargo, email, telefone, linkedin_url, contribuido_por, organizacao_id)
+         values ($1,$2,$3,$4,$5,$6,$7,$8)
+         on conflict (cnpj, lower(nome), lower(cargo)) do update set
+           email = coalesce(excluded.email, base_contato.email),
+           telefone = coalesce(excluded.telefone, base_contato.telefone),
+           linkedin_url = coalesce(excluded.linkedin_url, base_contato.linkedin_url)`,
+        [d, nome, cargo, email, p.telefone?.trim() || null, linkedin, ator.usuarioId, org],
+      );
+      await auditar("base.contato", d, { nome, cargo });
+    },
+
+    /** Buscas recentes da organização (para retomar o trabalho). */
+    async buscasRecentes(limite = 12) {
+      const r = await db.query<Linha>(
+        `select j.id, j.cnpj, j.status, j.criado_em, j.etapa, e.dados->>'razaoSocial' as nome
+           from busca_job j left join empresa_cache e on e.cnpj = j.cnpj
+          where j.organizacao_id = $1 order by j.criado_em desc limit $2`,
+        [org, limite],
+      );
+      return r.rows.map((x) => ({
+        id: x.id as string,
+        cnpj: x.cnpj as string,
+        empresa: (x.nome as string) ?? (x.cnpj as string),
+        status: x.status as string,
+        quando: new Date(x.criado_em as string).toISOString(),
+      }));
+    },
+
+    // ───────────── Operadora da plataforma ─────────────
+
+    async adminResumo() {
+      exigirOperadora();
+      const n = async (sql: string) => Number((await um<{ n: number }>(sql))!.n);
+      return {
+        organizacoes: await n("select count(*)::int as n from organizacao"),
+        usuarios: await n("select count(distinct usuario_id)::int as n from membro"),
+        empresasNaBase: await n("select count(*)::int as n from empresa_cache"),
+        varreduras: await n("select count(*)::int as n from pool_busca"),
+        contatosNoPool: await n("select coalesce(sum(jsonb_array_length(contatos)),0)::int as n from pool_busca"),
+        contatosDaComunidade: await n("select count(*)::int as n from base_contato"),
+        buscas30d: await n("select count(*)::int as n from busca_job where criado_em > now() - interval '30 days'"),
+        optOuts: await n("select count(*)::int as n from opt_out"),
+      };
+    },
+
+    async adminOrganizacoes() {
+      exigirOperadora();
+      const r = await db.query<Linha>(
+        `select o.id, o.nome, o.criado_em, c.custos,
+                (select count(*)::int from membro m where m.organizacao_id = o.id) as membros,
+                (select count(*)::int from busca_job j where j.organizacao_id = o.id) as buscas,
+                saldo_creditos(o.id) as saldo
+           from organizacao o left join config_tenant c on c.organizacao_id = o.id order by o.criado_em desc limit 200`,
+      );
+      return r.rows.map((x) => ({
+        id: x.id as string,
+        nome: x.nome as string,
+        criadaEm: new Date(x.criado_em as string).toISOString(),
+        membros: Number(x.membros),
+        buscas: Number(x.buscas),
+        saldo: Number(x.saldo),
+        custos: { ...TABELA_CUSTOS_PADRAO, ...((x.custos as Partial<TabelaCustos>) ?? {}) },
+      }));
+    },
+
+    async adminRecarregar(orgId: string, valor: number, descricao: string) {
+      exigirOperadora();
+      if (!UUID.test(orgId)) throw new ErroDeNegocio("Organização não encontrada.", 404);
+      if (!Number.isInteger(valor) || valor <= 0 || valor > 100000) throw new ErroDeNegocio("Informe um valor inteiro entre 1 e 100000.");
+      await db.query("select recarregar_creditos($1,$2,$3)", [orgId, valor, descricao]);
+      await db.query(
+        "insert into auditoria (usuario_id, organizacao_id, acao, alvo, detalhe) values ($1,$2::uuid,'admin.recarga',$2::text,$3::jsonb)",
+        [ator.usuarioId, orgId, JSON.stringify({ valor, descricao })],
+      );
+    },
+
+    async adminAtualizarCustos(orgId: string, custos: TabelaCustos) {
+      exigirOperadora();
+      if (!UUID.test(orgId)) throw new ErroDeNegocio("Organização não encontrada.", 404);
+      for (const v of Object.values(custos)) {
+        if (!Number.isInteger(v) || v < 1 || v > 1000) throw new ErroDeNegocio("Cada custo deve ser um inteiro entre 1 e 1000.");
+      }
+      await db.query(
+        `insert into config_tenant (organizacao_id, custos) values ($1,$2::jsonb)
+         on conflict (organizacao_id) do update set custos = excluded.custos`,
+        [orgId, JSON.stringify(custos)],
+      );
+      await db.query(
+        "insert into auditoria (usuario_id, organizacao_id, acao, alvo, detalhe) values ($1,$2::uuid,'admin.custos',$2::text,$3::jsonb)",
+        [ator.usuarioId, orgId, JSON.stringify(custos)],
+      );
+    },
+
     async revelar(params: { contatoId: string; campo: "email" | "telefone" }) {
       if (!UUID.test(params.contatoId)) throw new ErroDeNegocio("Contato não encontrado.", 404);
       try {
@@ -492,6 +907,7 @@ export function criarServicosPg({
           where contatos::text ilike '%' || $1 || '%'`,
         [e],
       );
+      await db.query("delete from base_contato where lower(email) = $1", [e]);
       return { contatosAfetados: r.rows.length };
     },
 
@@ -500,7 +916,7 @@ export function criarServicosPg({
      * email, telefone, linkedin (opcionais). Não cobra créditos: o dado é do próprio cliente,
      * então já entra revelado. Respeita o opt-out.
      */
-    async importarContatos(texto: string): Promise<{ importados: number; ignorados: number; erros: string[] }> {
+    async importarContatos(texto: string, opcoes: { compartilhar?: boolean } = {}): Promise<{ importados: number; ignorados: number; erros: string[] }> {
       const linhas = lerCsv(texto);
       if (linhas.length < 2) throw new ErroDeNegocio("O arquivo precisa de cabeçalho e ao menos uma linha.");
       if (linhas.length > 5001) throw new ErroDeNegocio("Limite de 5.000 linhas por importação.");
@@ -557,6 +973,15 @@ export function criarServicosPg({
              telefone = coalesce(excluded.telefone, contato_dado.telefone)`,
           [r!.id, email, tel],
         );
+        if (opcoes.compartilhar) {
+          // Só entra na base comum se o usuário marcou a opção; quem já está lá não é sobrescrito.
+          await db.query(
+            `insert into base_contato (cnpj, nome, cargo, email, telefone, linkedin_url, origem, contribuido_por, organizacao_id)
+             values ($1,$2,$3,$4,$5,$6,'Importação de usuário',$7,$8)
+             on conflict (cnpj, lower(nome), lower(cargo)) do nothing`,
+            [cnpj, v(iNome), v(iCargo), email, tel, v(iLink) || null, ator.usuarioId, org],
+          );
+        }
         await db.query(
           `update contato set tem_email = tem_email or $2, tem_telefone = tem_telefone or $3,
              email_revelado = email_revelado or $2, telefone_revelado = telefone_revelado or $3 where id = $1`,

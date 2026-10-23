@@ -34,13 +34,22 @@ function provedores() {
 
 /** Serviços em nome do usuário logado (ou do usuário de demonstração, sem login configurado). */
 export async function servicos(): Promise<ServicosPg> {
+  return (await contexto()).servicos;
+}
+
+/** Sessão e serviços da requisição, para páginas e ações. */
+export async function contexto() {
   const banco = await banco$();
   const sessao = await obterSessao(banco);
-  return criarServicosPg({
-    db: banco.comUsuario(sessao.usuarioId),
-    org: sessao.orgId,
-    ...provedores(),
-  });
+  return {
+    sessao,
+    servicos: criarServicosPg({
+      db: banco.comUsuario(sessao.usuarioId),
+      org: sessao.orgId,
+      ator: { usuarioId: sessao.usuarioId, papel: sessao.papel, operadora: sessao.operadora },
+      ...provedores(),
+    }),
+  };
 }
 
 const ZERO = "00000000-0000-0000-0000-000000000000";
