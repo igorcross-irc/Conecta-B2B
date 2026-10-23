@@ -21,9 +21,9 @@ async function Conteudo() {
       <section className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <p className="text-sm text-slate-500">Saldo disponível</p>
-          <p className="text-4xl font-semibold text-indigo-700">{await s.saldo()}</p>
+          <p className="text-4xl font-semibold text-marca-700">{await s.saldo()}</p>
           <p className="mt-1 text-xs text-slate-500">
-            Conta de demonstração. Os créditos não expiram.
+            Os créditos não expiram.
           </p>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">

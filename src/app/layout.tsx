@@ -1,52 +1,18 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { Suspense } from "react";
 import "./globals.css";
-import { getAuth } from "@/lib/auth/server";
-import { sair } from "./entrar/actions";
 
 export const metadata: Metadata = {
-  title: "Conecta-B2B",
-  description: "Prospecção B2B: empresas, decisores e contatos verificados.",
+  title: { default: "Conecta-B2B — decisores e contatos de empresas brasileiras", template: "%s · Conecta-B2B" },
+  description:
+    "Encontre quem decide dentro de qualquer empresa brasileira a partir do CNPJ. Base colaborativa que cresce a cada busca, com fontes abertas e LGPD no centro.",
 };
-
-const MENU = [
-  { href: "/descobrir", rotulo: "Descobrir" },
-  { href: "/listas", rotulo: "Listas" },
-  { href: "/importar", rotulo: "Importar" },
-  { href: "/creditos", rotulo: "Créditos" },
-];
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="pt-BR" className="h-full antialiased">
-      <body className="min-h-full bg-slate-50 text-slate-900">
-        <div className="mx-auto flex min-h-screen max-w-6xl flex-col md:flex-row">
-          <nav className="flex gap-1 border-b border-slate-200 bg-white p-3 md:w-48 md:flex-col md:border-b-0 md:border-r md:p-4">
-            <span className="px-3 py-2 text-lg font-semibold text-indigo-700">
-              Conecta-B2B
-            </span>
-            {MENU.map((m) => (
-              <Link
-                key={m.href}
-                href={m.href}
-                className="rounded-md px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-              >
-                {m.rotulo}
-              </Link>
-            ))}
-            {getAuth() && (
-              <form action={sair} className="mt-auto">
-                <button className="w-full rounded-md px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100">
-                  Sair
-                </button>
-              </form>
-            )}
-            <Link href="/optout" className="px-3 py-2 text-xs text-slate-500 hover:underline">
-              Opt-out (LGPD)
-            </Link>
-          </nav>
-          <main className="flex-1 p-4 md:p-8">{children}</main>
-        </div>
+      <body className="min-h-full">
+        <Suspense fallback={<p className="p-8 text-sm text-slate-500">Carregando…</p>}>{children}</Suspense>
       </body>
     </html>
   );

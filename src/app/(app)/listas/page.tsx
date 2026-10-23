@@ -55,7 +55,7 @@ export default function Listas() {
           placeholder="Nome da nova lista"
           className="w-64 rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
-        <button className="rounded-md bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800">
+        <button className="rounded-md bg-marca-700 px-4 py-2 text-sm font-medium text-white hover:bg-marca-900">
           Criar lista
         </button>
       </form>
@@ -73,7 +73,7 @@ export default function Listas() {
             </h2>
             <a
               href={`/api/listas/exportar?listaId=${l.id}`}
-              className="text-sm font-medium text-indigo-700 hover:underline"
+              className="text-sm font-medium text-marca-700 hover:underline"
             >
               Exportar CSV
             </a>

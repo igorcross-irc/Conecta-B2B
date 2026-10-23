@@ -13,13 +13,14 @@ export default function Importar() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [erro, setErro] = useState("");
   const [ocupado, setOcupado] = useState(false);
+  const [compartilhar, setCompartilhar] = useState(false);
 
   async function enviar() {
     setErro("");
     setResultado(null);
     setOcupado(true);
     try {
-      const r = await fetch("/api/importar", { method: "POST", body: texto, cache: "no-store" });
+      const r = await fetch(`/api/importar${compartilhar ? "?compartilhar=1" : ""}`, { method: "POST", body: texto, cache: "no-store" });
       const dados = await r.json();
       if (!r.ok) throw new Error(dados.erro ?? "Erro inesperado.");
       setResultado(dados as Resultado);
@@ -55,10 +56,17 @@ export default function Importar() {
         placeholder={"cnpj,nome,cargo,email,telefone\n33000167000101,Maria Silva,Diretora Comercial,maria@empresa.com.br,"}
         className="w-full rounded-md border border-slate-300 p-3 font-mono text-xs"
       />
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" checked={compartilhar} onChange={(e) => setCompartilhar(e.target.checked)} className="mt-1" />
+        <span>
+          Compartilhar com a base comum: os contatos passam a aparecer nas buscas de todos os usuários (mediante crédito
+          para revelar). Marque só se você pode compartilhar esses dados.
+        </span>
+      </label>
       <button
         onClick={enviar}
         disabled={ocupado || !texto.trim()}
-        className="rounded-md bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+        className="rounded-md bg-marca-700 px-4 py-2 text-sm font-medium text-white hover:bg-marca-900 disabled:opacity-50"
       >
         Importar
       </button>

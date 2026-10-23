@@ -22,9 +22,9 @@ export default function OptOut() {
   }
 
   return (
-    <div className="max-w-md space-y-4">
-      <h1 className="text-2xl font-semibold">Não quero ser contatado</h1>
-      <p className="text-sm text-slate-600">
+    <div className="mx-auto max-w-md space-y-4">
+      <h1 className="titulo-pagina">Não quero ser contatado</h1>
+      <p className="sub-pagina">
         Informe o e-mail profissional que aparece em nossas buscas. Vamos apagar seus dados de
         contato e impedir que voltem a ser listados.
       </p>
@@ -34,15 +34,15 @@ export default function OptOut() {
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="input flex-1"
           placeholder="voce@empresa.com.br"
         />
-        <button className="rounded-md bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800">
+        <button className="btn-primario">
           Enviar
         </button>
       </form>
-      {erro && <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{erro}</p>}
-      {msg && <p className="rounded-md bg-green-50 p-3 text-sm text-green-800">{msg}</p>}
+      {erro && <p role="alert" className="aviso-erro">{erro}</p>}
+      {msg && <p className="aviso-ok">{msg}</p>}
     </div>
   );
 }

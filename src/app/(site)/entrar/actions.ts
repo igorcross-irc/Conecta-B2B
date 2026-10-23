@@ -3,6 +3,11 @@
 import { redirect } from "next/navigation";
 import { getAuth } from "@/lib/auth/server";
 
+function destino(dados: FormData): string {
+  const p = String(dados.get("proximo") ?? "");
+  return p.startsWith("/") && !p.startsWith("//") ? p : "/descobrir";
+}
+
 export interface EstadoForm {
   erro?: string;
 }
@@ -15,7 +20,7 @@ export async function entrar(_: EstadoForm, dados: FormData): Promise<EstadoForm
     password: String(dados.get("senha") ?? ""),
   });
   if (error) return { erro: error.message ?? "Não foi possível entrar." };
-  redirect("/descobrir");
+  redirect(destino(dados));
 }
 
 export async function criarConta(_: EstadoForm, dados: FormData): Promise<EstadoForm> {
@@ -29,7 +34,7 @@ export async function criarConta(_: EstadoForm, dados: FormData): Promise<Estado
     password: senha,
   });
   if (error) return { erro: error.message ?? "Não foi possível criar a conta." };
-  redirect("/descobrir");
+  redirect(destino(dados));
 }
 
 export async function sair() {

@@ -69,8 +69,8 @@ interface Busca {
   saldo?: number;
 }
 
-export default function Descobrir() {
-  const [cnpj, setCnpj] = useState("");
+export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }) {
+  const [cnpj, setCnpj] = useState(cnpjInicial);
   const [cargos, setCargos] = useState("comercial, marketing");
   const [empresa, setEmpresa] = useState<Empresa | null>(null);
   const [contatos, setContatos] = useState<Contato[]>([]);
@@ -185,7 +185,7 @@ export default function Descobrir() {
         </label>
         <button
           disabled={ocupado}
-          className="rounded-md bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+          className="rounded-md bg-marca-700 px-4 py-2 text-sm font-medium text-white hover:bg-marca-900 disabled:opacity-50"
         >
           Buscar empresa
         </button>
@@ -234,7 +234,7 @@ export default function Descobrir() {
             <button
               onClick={buscarDecisores}
               disabled={ocupado || emAndamento}
-              className="rounded-md bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+              className="rounded-md bg-marca-700 px-4 py-2 text-sm font-medium text-white hover:bg-marca-900 disabled:opacity-50"
             >
               Buscar decisores (1 crédito)
             </button>
@@ -248,7 +248,7 @@ export default function Descobrir() {
           {busca && busca.status !== "concluida" && (
             <div
               role="status"
-              className={`rounded-md p-3 text-sm ${busca.status === "erro" ? "bg-red-50 text-red-700" : "bg-indigo-50 text-indigo-900"}`}
+              className={`rounded-md p-3 text-sm ${busca.status === "erro" ? "bg-red-50 text-red-700" : "bg-marca-50 text-marca-900"}`}
             >
               {busca.status === "em_andamento" ? (
                 <>
@@ -298,7 +298,7 @@ export default function Descobrir() {
                         </em>
                       </span>
                     ) : (
-                      <button onClick={() => revelar(c.id, "email")} disabled={ocupado} className="text-indigo-700 hover:underline disabled:opacity-50">
+                      <button onClick={() => revelar(c.id, "email")} disabled={ocupado} className="text-marca-700 hover:underline disabled:opacity-50">
                         {c.emailMascarado} · revelar e-mail
                       </button>
                     )
@@ -309,7 +309,7 @@ export default function Descobrir() {
                     c.telefone ? (
                       <span>{c.telefone}</span>
                     ) : (
-                      <button onClick={() => revelar(c.id, "telefone")} disabled={ocupado} className="text-indigo-700 hover:underline disabled:opacity-50">
+                      <button onClick={() => revelar(c.id, "telefone")} disabled={ocupado} className="text-marca-700 hover:underline disabled:opacity-50">
                         {c.telefoneMascarado} · revelar telefone
                       </button>
                     )
@@ -317,7 +317,7 @@ export default function Descobrir() {
                     <span className="text-slate-400">sem telefone</span>
                   )}
                   {c.linkedinUrl && (
-                    <a href={c.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-700 hover:underline">
+                    <a href={c.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-marca-700 hover:underline">
                       LinkedIn
                     </a>
                   )}
@@ -335,7 +335,7 @@ export default function Descobrir() {
             <button
               onClick={salvarEmLista}
               disabled={ocupado || !listaNome.trim()}
-              className="rounded-md border border-indigo-700 px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+              className="rounded-md border border-marca-700 px-4 py-2 text-sm font-medium text-marca-700 hover:bg-marca-50 disabled:opacity-50"
             >
               Salvar todos em nova lista
             </button>
