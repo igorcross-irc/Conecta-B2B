@@ -151,12 +151,22 @@ export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }
     setEmpresa(null);
     setCandidatos(null);
     void executar(async () => {
-      const digitos = cnpj.replace(/\D/g, "");
-      if (digitos.length === 14) return carregar(cnpj);
-      // Não é CNPJ: trata como endereço do site e procura o CNPJ da empresa.
-      const r = await chamar<{ dominio: string; candidatos: Candidato[] }>(`/api/empresa?site=${encodeURIComponent(cnpj)}`);
+      const entrada = cnpj.trim();
+      const digitos = entrada.replace(/\D/g, "");
+      if (digitos.length === 14) return carregar(digitos);
+      // Qualquer outra coisa é um site: o próprio endereço é o centralizador das buscas, sem exigir CNPJ.
+      const dominio = entrada.toLowerCase().replace(/^site:/, "").replace(/^https?:\/\//, "").replace(/[/?#].*$/, "").replace(/^www\./, "");
+      if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(dominio)) throw new Error("Informe um CNPJ (14 dígitos) ou o endereço do site (ex.: empresa.com.br).");
+      return carregar(`site:${dominio}`);
+    });
+  };
+
+  const acharCnpj = () => {
+    const dominio = cnpj.replace(/^site:/, "");
+    void executar(async () => {
+      const r = await chamar<{ dominio: string; candidatos: Candidato[] }>(`/api/empresa?site=${encodeURIComponent(dominio)}`);
       setSiteBuscado(r.dominio);
-      if (r.candidatos.length === 1) return carregar(r.candidatos[0].cnpj, r.dominio);
+      if (r.candidatos.length === 0) throw new Error("Nenhum CNPJ encontrado nesse site. Você pode seguir pesquisando só pelo site.");
       setCandidatos(r.candidatos);
     });
   };
@@ -243,6 +253,12 @@ export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }
           <div>
             <h2 className="text-lg font-medium">{empresa.nomeFantasia ?? empresa.razaoSocial}</h2>
             <p className="text-sm text-slate-500">{empresa.razaoSocial}</p>
+            {empresa.cnpj.startsWith("site:") && (
+              <p className="mt-1 text-sm text-slate-600">
+                Pesquisando só pelo site, sem CNPJ.{" "}
+                <button type="button" disabled={ocupado} onClick={acharCnpj} className="text-marca-700 underline">Procurar o CNPJ deste site</button>
+              </p>
+            )}
           </div>
           <dl className="grid gap-2 text-sm sm:grid-cols-3">
             <div><dt className="text-slate-500">Situação</dt><dd>{empresa.situacao}</dd></div>

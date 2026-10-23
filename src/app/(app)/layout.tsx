@@ -19,7 +19,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const { sessao, servicos } = c;
   const saldo = await servicos.saldo();
   const itens: ItemMenu[] = [
-    { href: "/descobrir", rotulo: "Descobrir", secao: "Prospecção" },
+    { href: "/pesquisar", rotulo: "Pesquisar", secao: "Prospecção" },
+    { href: "/descobrir", rotulo: "Descobrir" },
     { href: "/base", rotulo: "Base comum", secao: "Prospecção" },
     { href: "/listas", rotulo: "Listas", secao: "Prospecção" },
     { href: "/importar", rotulo: "Importar", secao: "Prospecção" },

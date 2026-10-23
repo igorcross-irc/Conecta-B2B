@@ -444,3 +444,35 @@ describe("busca por site", () => {
     await expect(s.resolverSite("not a site")).rejects.toThrow(/inválido/);
   });
 });
+
+describe("alvo por site e pesquisa avançada", () => {
+  it("pesquisa só pelo site, sem CNPJ, e roda a busca sobre ele", async () => {
+    const { db, s } = await novo();
+    const e = await s.consultarEmpresa("site:acme.com.br");
+    expect(e).toMatchObject({ cnpj: "site:acme.com.br", dominio: "acme.com.br" });
+    const j = await s.iniciarBusca({ cnpj: "site:acme.com.br", cargos: [], chave: "site1" }).catch((x) => x);
+    expect(j).not.toBeInstanceOf(Error);
+    expect((await db.query("select cnpj from busca_job")).rows[0]).toEqual({ cnpj: "site:acme.com.br" });
+    await expect(s.consultarEmpresa("abc")).rejects.toThrow(/inválido/);
+  });
+
+  it("pesquisa por nome, UF, cidade, bairro e segmento", async () => {
+    const { db, s } = await novo();
+    await db.query(`insert into rf_cnae (codigo, descricao, busca) values (4639701, 'Comércio atacadista de produtos alimentícios', 'comercio atacadista de produtos alimenticios')`);
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, nome_fantasia, matriz, situacao, cnae, uf, municipio, bairro, busca) values
+       ('33000167000101','ATACADAO SA','Atacadão',true,'ATIVA',4639701,'RJ','Rio de Janeiro','Barra da Tijuca','atacadao sa atacadao'),
+       ('11222333000181','ATACADAO SA','Atacadão',false,'ATIVA',4639701,'SP','São Paulo','Mooca','atacadao sa atacadao'),
+       ('00000000000191','PADARIA DO ZE','Pão Quente',true,'ATIVA',4721102,'RJ','Niterói','Icaraí','padaria do ze pao quente')`,
+    );
+    expect((await s.pesquisar({})).itens).toEqual([]);
+    const a = await s.pesquisar({ nome: "Atacadão" });
+    expect(a.itens.map((i) => i.cnpj)).toEqual(["33000167000101"]);
+    expect((await s.pesquisar({ nome: "atacadao", incluirFiliais: true })).total).toBe(2);
+    expect((await s.pesquisar({ nome: "atacadao", uf: "sp", incluirFiliais: true })).itens[0].cnpj).toBe("11222333000181");
+    expect((await s.pesquisar({ cidade: "niteroi" })).itens[0].razaoSocial).toBe("PADARIA DO ZE");
+    expect((await s.pesquisar({ bairro: "barra", segmento: "atacadista" })).total).toBe(1);
+    expect((await s.pesquisar({ segmento: "4639701" })).total).toBe(1);
+    expect((await s.pesquisar({ nome: "zzz" })).total).toBe(0);
+  });
+});

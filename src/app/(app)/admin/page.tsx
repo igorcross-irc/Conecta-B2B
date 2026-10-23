@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { contexto } from "@/lib/app";
@@ -26,6 +27,7 @@ export default async function Admin() {
       <header>
         <h1 className="titulo-pagina">Plataforma</h1>
         <p className="sub-pagina">Visão da operadora: todas as organizações, créditos e custos.</p>
+        <Link href="/admin/ia" className="text-sm text-marca-700 underline">Teste de IA (Gemini)</Link>
       </header>
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {kpis.map(([k, v]) => (

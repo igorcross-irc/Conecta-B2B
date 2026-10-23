@@ -14,6 +14,16 @@ import {
   type ContatoVisivel,
 } from "./servicos";
 
+export interface PesquisaFiltros {
+  nome?: string; termos?: string; uf?: string; cidade?: string; bairro?: string; segmento?: string;
+  incluirFiliais?: boolean; pagina?: number;
+}
+export interface ItemPesquisa {
+  cnpj: string; razaoSocial: string; nomeFantasia?: string; municipio?: string; uf?: string;
+  bairro?: string; atividade?: string; dominio?: string;
+}
+export interface ResultadoPesquisa { itens: ItemPesquisa[]; total: number; baseReceita: boolean; sites: string[] }
+
 export interface EstadoBusca {
   id: string;
   cnpj: string;
@@ -162,6 +172,8 @@ export function criarServicosPg({
     return ids.flatMap((id) => (porId.get(id) ? [porId.get(id)!] : []));
   }
 
+  const temBaseReceita = async () =>
+    ((await db.query<{ n: number }>("select count(*)::int as n from (select 1 from rf_estabelecimento limit 1) x")).rows[0]?.n ?? 0) > 0;
   const saldo = async () =>
     Number((await um<{ s: number }>("select saldo_creditos($1) as s", [org]))!.s);
 
@@ -689,6 +701,78 @@ export function criarServicosPg({
       }));
     },
 
+    // ───────────── Pesquisa avançada ─────────────
+
+    /**
+     * Pesquisa empresas por nome/termos, UF, cidade, bairro e segmento (CNAE), na base da Receita importada
+     * e nas empresas/sites já conhecidos. A resposta lista CNPJs e sites que combinam com o termo.
+     */
+    async pesquisar(f: PesquisaFiltros = {}): Promise<ResultadoPesquisa> {
+      const nome = normalizarBusca(f.nome ?? "");
+      const termos = normalizarBusca(f.termos ?? "").split(" ").filter(Boolean).slice(0, 5);
+      const uf = (f.uf ?? "").trim().toUpperCase().slice(0, 2);
+      const cidade = normalizarBusca(f.cidade ?? "");
+      const bairro = normalizarBusca(f.bairro ?? "");
+      const segmento = normalizarBusca(f.segmento ?? "");
+      const todasMatrizes = f.incluirFiliais === true;
+      const pagina = Math.max(0, Math.floor(f.pagina ?? 0));
+      const temFiltro = nome || termos.length || uf || cidade || bairro || segmento;
+      if (!temFiltro) return { itens: [], total: 0, baseReceita: await temBaseReceita(), sites: [] };
+
+      const where: string[] = ["e.situacao = 'ATIVA'"];
+      const p: unknown[] = [];
+      const add = (v: unknown) => (p.push(v), `$${p.length}`);
+      if (!todasMatrizes) where.push("e.matriz");
+      if (nome) where.push(`e.busca like '%' || ${add(nome)} || '%'`);
+      for (const t of termos) where.push(`e.busca like '%' || ${add(t)} || '%'`);
+      if (uf) where.push(`e.uf = ${add(uf)}`);
+      if (cidade) where.push(`lower(translate(e.municipio, 'ÁÀÂÃÉÊÍÓÔÕÚÇáàâãéêíóôõúç', 'AAAAEEIOOOUCaaaaeeiooouc')) like '%' || ${add(cidade)} || '%'`);
+      if (bairro) where.push(`lower(translate(e.bairro, 'ÁÀÂÃÉÊÍÓÔÕÚÇáàâãéêíóôõúç', 'AAAAEEIOOOUCaaaaeeiooouc')) like '%' || ${add(bairro)} || '%'`);
+      if (segmento) {
+        const codigo = segmento.replace(/\D/g, "");
+        where.push(
+          codigo.length >= 4
+            ? `e.cnae::text like ${add(codigo + "%")}`
+            : `e.cnae in (select codigo from rf_cnae where busca like '%' || ${add(segmento)} || '%')`,
+        );
+      }
+      const w = where.join(" and ");
+      const total = await um<{ n: number }>(`select count(*)::int as n from rf_estabelecimento e where ${w}`, p);
+      const r = await db.query(
+        `select e.cnpj, e.razao_social, e.nome_fantasia, e.municipio, e.uf, e.bairro, e.cnae, c.descricao as atividade,
+                (select i.dominio from base_empresa_info i where i.cnpj = e.cnpj) as dominio
+           from rf_estabelecimento e left join rf_cnae c on c.codigo = e.cnae
+          where ${w} order by e.razao_social limit 25 offset ${add(pagina * 25)}`,
+        p,
+      );
+      // Sites já conhecidos cujo endereço combina com o termo (não dependem da base da Receita)
+      const termoSite = [nome, ...termos].filter(Boolean).join("").replace(/ /g, "");
+      const sites = termoSite.length >= 3
+        ? (await db.query(
+            `select distinct dominio from (
+               select dominio from base_empresa_info where dominio is not null
+               union select substring(cnpj from 6) as dominio from empresa_cache where cnpj like 'site:%'
+             ) s where replace(dominio, '-', '') like '%' || $1 || '%' order by dominio limit 10`,
+            [termoSite],
+          )).rows.map((x) => String(x.dominio))
+        : [];
+      return {
+        total: total?.n ?? 0,
+        baseReceita: await temBaseReceita(),
+        sites,
+        itens: r.rows.map((x) => ({
+          cnpj: String(x.cnpj),
+          razaoSocial: String(x.razao_social),
+          nomeFantasia: (x.nome_fantasia as string) ?? undefined,
+          municipio: (x.municipio as string) ?? undefined,
+          uf: (x.uf as string) ?? undefined,
+          bairro: (x.bairro as string) ?? undefined,
+          atividade: (x.atividade as string) ?? undefined,
+          dominio: (x.dominio as string) ?? undefined,
+        })),
+      };
+    },
+
     // ───────────── Base colaborativa ─────────────
 
     /** Empresas já pesquisadas por qualquer usuário, com o que se sabe delas. Só dados públicos e contagens. */
@@ -1064,25 +1148,25 @@ export function criarServicosPg({
 
     /** Sinal de compra genérico (rádio, vaga aberta, licitação, notícia etc.), sempre com fonte e data. */
     async registrarSinal(p: { cnpj: string; tipo: string; fonte: string; ocorridoEm: string; conteudo?: unknown }) {
-      if (!cnpjValido(p.cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      if (!alvoValido(p.cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
       if (!p.tipo.trim() || !p.fonte.trim()) throw new ErroDeNegocio("Informe o tipo e a fonte do sinal.");
       const quando = new Date(p.ocorridoEm);
       if (Number.isNaN(quando.getTime())) throw new ErroDeNegocio("Data do sinal inválida.");
       const r = await um<{ id: string }>(
         `insert into sinal (organizacao_id, tipo, fonte, cnpj, ocorrido_em, conteudo)
          values ($1,$2,$3,$4,$5,$6) returning id`,
-        [org, p.tipo.trim(), p.fonte.trim(), somenteDigitos(p.cnpj), quando.toISOString(), JSON.stringify(p.conteudo ?? {})],
+        [org, p.tipo.trim(), p.fonte.trim(), chaveAlvo(p.cnpj), quando.toISOString(), JSON.stringify(p.conteudo ?? {})],
       );
       return { id: r!.id };
     },
 
     async sinaisDoCnpj(cnpj: string) {
-      if (!cnpjValido(cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      if (!alvoValido(cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
       const r = await db.query<Linha>(
         `select id, tipo, fonte, ocorrido_em, conteudo from sinal
           where cnpj = $1 and (organizacao_id is null or organizacao_id = $2)
           order by ocorrido_em desc limit 100`,
-        [somenteDigitos(cnpj), org],
+        [chaveAlvo(cnpj), org],
       );
       return r.rows.map((x) => ({
         id: x.id as string,

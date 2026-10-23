@@ -122,3 +122,11 @@ export async function salvarCustos(_: Resultado, d: FormData): Promise<Resultado
     return { ok: "Custos atualizados." };
   }, "/admin");
 }
+
+/** Teste de IA (Gemini): só a operadora da plataforma. */
+export async function testarIA(prompt: string): Promise<import("@/lib/ia/gemini").ResultadoIA> {
+  const { sessao } = await contexto();
+  if (!sessao.operadora) return { ok: false, chave: false, erro: "Acesso restrito à operadora." };
+  const { testarGemini } = await import("@/lib/ia/gemini");
+  return testarGemini(prompt.slice(0, 500));
+}
