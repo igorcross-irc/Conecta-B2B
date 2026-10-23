@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DEPARTAMENTOS, SENIORIDADES, classificarCargo, pesoDoCargo } from "@/lib/cargos";
 
 interface Empresa {
   cnpj: string;
@@ -8,19 +9,40 @@ interface Empresa {
   nomeFantasia?: string;
   situacao: string;
   porte?: string;
+  naturezaJuridica?: string;
+  capitalSocial?: number;
   municipio?: string;
   uf?: string;
-  cnaePrincipal?: { descricao: string };
+  endereco?: { logradouro?: string; numero?: string; complemento?: string; bairro?: string; cep?: string };
+  abertaEm?: string;
+  matriz?: boolean;
+  simples?: boolean;
+  mei?: boolean;
+  cnaePrincipal?: { codigo?: number; descricao: string };
+  cnaesSecundarios?: { codigo: number; descricao: string }[];
+  telefones: string[];
+  emailsCadastrais: string[];
+  socios: { nome: string; qualificacao: string; desde?: string }[];
   dominio?: string;
   fonte: string;
   obtidoEm: string;
 }
+
+const dinheiro = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+const dataBr = (d?: string) => (d ? new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString("pt-BR") : undefined);
+function idade(d?: string): string | undefined {
+  if (!d) return undefined;
+  const anos = (Date.now() - new Date(d).getTime()) / (365.25 * 864e5);
+  return anos < 1 ? "menos de 1 ano" : `${Math.floor(anos)} ano${Math.floor(anos) > 1 ? "s" : ""}`;
+}
+const cepBr = (c?: string) => (c && c.length === 8 ? `${c.slice(0, 5)}-${c.slice(5)}` : c);
 
 interface Contato {
   id: string;
   nome: string;
   cargo: string;
   departamento?: string;
+  senioridade?: string;
   temEmail: boolean;
   email?: string;
   emailMascarado?: string;
@@ -82,7 +104,7 @@ export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }
   const [cnpj, setCnpj] = useState(cnpjInicial);
   const [candidatos, setCandidatos] = useState<Candidato[] | null>(null);
   const [siteBuscado, setSiteBuscado] = useState("");
-  const [cargos, setCargos] = useState("comercial, marketing");
+  const [filtro, setFiltro] = useState({ depto: "", senior: "", soEmail: false, soTel: false, texto: "" });
   const [empresa, setEmpresa] = useState<Empresa | null>(null);
   const [contatos, setContatos] = useState<Contato[]>([]);
   const [saldo, setSaldo] = useState<number | null>(null);
@@ -100,7 +122,7 @@ export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }
     if (b?.status !== "concluida") return;
     setContatos(b.contatos ?? []);
     if (b.saldo !== undefined) setSaldo(b.saldo);
-    if ((b.contatos ?? []).length === 0) setAviso("Nenhum decisor encontrado. A busca foi estornada.");
+    if ((b.contatos ?? []).length === 0) setAviso("Nenhuma pessoa encontrada nas fontes ligadas (quadro societário e site). O crédito foi devolvido. Para achar mais gente, ligue as fontes extras em Plataforma › IA (chaves Tavily e Hunter).");
   }
 
   // Acompanha a busca em segundo plano: consulta o andamento a cada 2 s até concluir.
@@ -171,13 +193,27 @@ export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }
     });
   };
 
+  const visiveis = contatos
+    .filter((c) => {
+      const k = classificarCargo(c.cargo);
+      const t = filtro.texto.trim().toLowerCase();
+      return (
+        (!filtro.depto || k.departamento === filtro.depto) &&
+        (!filtro.senior || k.senioridade === filtro.senior) &&
+        (!filtro.soEmail || c.temEmail) &&
+        (!filtro.soTel || c.temTelefone) &&
+        (!t || `${c.nome} ${c.cargo}`.toLowerCase().includes(t))
+      );
+    })
+    .sort((a, b) => b.confianca * 0.6 + pesoDoCargo(b.cargo) * 0.4 - (a.confianca * 0.6 + pesoDoCargo(a.cargo) * 0.4));
+
   const buscarDecisores = () =>
     executar(async () => {
       setContatos([]);
       aplicarBusca(
         await chamar<Busca>("/api/decisores/busca", {
           cnpj,
-          cargos: cargos.split(",").map((c) => c.trim()).filter(Boolean),
+          cargos: [],
           chave: crypto.randomUUID(),
         }),
       );
@@ -260,13 +296,95 @@ export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }
               </p>
             )}
           </div>
-          <dl className="grid gap-2 text-sm sm:grid-cols-3">
-            <div><dt className="text-slate-500">Situação</dt><dd>{empresa.situacao}</dd></div>
-            <div><dt className="text-slate-500">Porte</dt><dd>{empresa.porte ?? "—"}</dd></div>
-            <div><dt className="text-slate-500">Local</dt><dd>{empresa.municipio ?? "—"}{empresa.uf ? `/${empresa.uf}` : ""}</dd></div>
-            <div className="sm:col-span-2"><dt className="text-slate-500">Atividade</dt><dd>{empresa.cnaePrincipal?.descricao ?? "—"}</dd></div>
-            <div><dt className="text-slate-500">Domínio</dt><dd>{empresa.dominio ?? "—"}</dd></div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full bg-marca-50 px-2 py-1 text-marca-900">{empresa.situacao}</span>
+            {empresa.matriz !== undefined && <span className="rounded-full bg-slate-100 px-2 py-1">{empresa.matriz ? "Matriz" : "Filial"}</span>}
+            {empresa.porte && <span className="rounded-full bg-slate-100 px-2 py-1">{empresa.porte}</span>}
+            {empresa.mei && <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-900">MEI</span>}
+            {empresa.simples && <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-900">Simples Nacional</span>}
+          </div>
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <div><dt className="text-slate-500">CNPJ</dt><dd>{empresa.cnpj.startsWith("site:") ? "—" : empresa.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}</dd></div>
+            <div><dt className="text-slate-500">Abertura</dt><dd>{dataBr(empresa.abertaEm) ?? "—"}{empresa.abertaEm ? ` · ${idade(empresa.abertaEm)}` : ""}</dd></div>
+            <div><dt className="text-slate-500">Natureza jurídica</dt><dd>{empresa.naturezaJuridica ?? "—"}</dd></div>
+            <div><dt className="text-slate-500">Capital social</dt><dd>{empresa.capitalSocial ? dinheiro(empresa.capitalSocial) : "—"}</dd></div>
+            <div className="sm:col-span-2">
+              <dt className="text-slate-500">Atividade principal</dt>
+              <dd>
+                {empresa.cnaePrincipal?.descricao ?? "—"}
+                {empresa.cnaePrincipal?.codigo ? <span className="text-slate-400"> · CNAE {empresa.cnaePrincipal.codigo}</span> : null}
+              </dd>
+            </div>
+            {!!empresa.cnaesSecundarios?.length && (
+              <div className="sm:col-span-2">
+                <dt className="text-slate-500">Atividades secundárias ({empresa.cnaesSecundarios.length})</dt>
+                <dd>
+                  <details>
+                    <summary className="cursor-pointer text-marca-700">Ver todas</summary>
+                    <ul className="mt-1 list-disc pl-5 text-slate-600">
+                      {empresa.cnaesSecundarios.map((c) => <li key={c.codigo}>{c.descricao} <span className="text-slate-400">({c.codigo})</span></li>)}
+                    </ul>
+                  </details>
+                </dd>
+              </div>
+            )}
+            <div className="sm:col-span-2">
+              <dt className="text-slate-500">Endereço</dt>
+              <dd>
+                {[empresa.endereco?.logradouro && `${empresa.endereco.logradouro}${empresa.endereco.numero ? `, ${empresa.endereco.numero}` : ""}`, empresa.endereco?.complemento, empresa.endereco?.bairro, empresa.municipio && `${empresa.municipio}${empresa.uf ? `/${empresa.uf}` : ""}`, empresa.endereco?.cep && `CEP ${cepBr(empresa.endereco.cep)}`].filter(Boolean).join(" · ") || "—"}
+                {(empresa.endereco?.logradouro || empresa.municipio) && (
+                  <>
+                    {" "}
+                    <a
+                      className="text-marca-700 underline"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([empresa.endereco?.logradouro, empresa.endereco?.numero, empresa.endereco?.bairro, empresa.municipio, empresa.uf].filter(Boolean).join(" "))}`}
+                    >
+                      ver no mapa
+                    </a>
+                  </>
+                )}
+              </dd>
+            </div>
+            <div><dt className="text-slate-500">Telefones cadastrais</dt><dd>{empresa.telefones.length ? empresa.telefones.join(" · ") : "—"}</dd></div>
+            <div><dt className="text-slate-500">E-mails cadastrais</dt><dd className="break-all">{empresa.emailsCadastrais.length ? empresa.emailsCadastrais.join(" · ") : "—"}</dd></div>
+            <div>
+              <dt className="text-slate-500">Site</dt>
+              <dd>
+                {empresa.dominio ? (
+                  <a className="text-marca-700 underline" target="_blank" rel="noopener noreferrer" href={`https://${empresa.dominio.replace(/^https?:\/\//, "")}`}>{empresa.dominio}</a>
+                ) : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Faturamento e funcionários</dt>
+              <dd className="text-slate-400">Em breve (não existe fonte gratuita confiável)</dd>
+            </div>
           </dl>
+          {empresa.socios.length > 0 && (
+            <div className="text-sm">
+              <p className="mb-1 text-slate-500">Quadro societário ({empresa.socios.length})</p>
+              <ul className="grid gap-1 sm:grid-cols-2">
+                {empresa.socios.map((x, i) => (
+                  <li key={i} className="rounded-md bg-slate-50 px-3 py-2">
+                    <span className="font-medium">{x.nome}</span>
+                    <span className="block text-xs text-slate-500">{x.qualificacao}{x.desde ? ` · desde ${dataBr(x.desde)}` : ""}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {empresa.cnaePrincipal?.codigo && empresa.uf && (
+            <p className="text-sm">
+              <a
+                className="text-marca-700 underline"
+                href={`/pesquisar?segmento=${String(empresa.cnaePrincipal.codigo).slice(0, 5)}&uf=${empresa.uf}&cidade=${encodeURIComponent(empresa.municipio ?? "")}`}
+              >
+                Ver empresas do mesmo segmento em {empresa.municipio ?? empresa.uf}
+              </a>
+            </p>
+          )}
           {sinais.length > 0 && (
             <div className="text-sm">
               <p className="mb-1 text-slate-500">Sinais de compra</p>
@@ -282,22 +400,18 @@ export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }
           <p className="text-xs text-slate-500">
             Fonte: {empresa.fonte}, em {new Date(empresa.obtidoEm).toLocaleString("pt-BR")}.
           </p>
-          <div className="flex flex-wrap items-end gap-3 border-t border-slate-100 pt-3">
-            <label className="text-sm">
-              Cargos ou áreas (separe por vírgula)
-              <input
-                value={cargos}
-                onChange={(e) => setCargos(e.target.value)}
-                className="mt-1 block w-72 rounded-md border border-slate-300 px-3 py-2"
-              />
-            </label>
+          <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3">
             <button
               onClick={buscarDecisores}
               disabled={ocupado || emAndamento}
               className="rounded-md bg-marca-700 px-4 py-2 text-sm font-medium text-white hover:bg-marca-900 disabled:opacity-50"
             >
-              Buscar decisores (1 crédito)
+              Buscar pessoas (1 crédito)
             </button>
+            <p className="max-w-xl text-xs text-slate-500">
+              Busca em todas as fontes de uma vez (sócios da Receita, site da empresa e as fontes extras ligadas) e
+              reúne tudo; depois você refina por departamento e senioridade, sem gastar mais.
+            </p>
           </div>
           {disponiveis !== null && disponiveis > 0 && !busca && (
             <p className="text-sm text-slate-600">
@@ -336,8 +450,27 @@ export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }
               Modo demonstração: os decisores abaixo são pessoas fictícias.
             </p>
           )}
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 text-sm">
+            <input
+              value={filtro.texto}
+              onChange={(e) => setFiltro({ ...filtro, texto: e.target.value })}
+              placeholder="Filtrar por nome ou cargo"
+              className="w-56 rounded-md border border-slate-300 px-2 py-1"
+            />
+            <select value={filtro.depto} onChange={(e) => setFiltro({ ...filtro, depto: e.target.value })} className="rounded-md border border-slate-300 px-2 py-1">
+              <option value="">Todos os departamentos</option>
+              {DEPARTAMENTOS.map((d) => <option key={d}>{d}</option>)}
+            </select>
+            <select value={filtro.senior} onChange={(e) => setFiltro({ ...filtro, senior: e.target.value })} className="rounded-md border border-slate-300 px-2 py-1">
+              <option value="">Toda senioridade</option>
+              {SENIORIDADES.map((d) => <option key={d}>{d}</option>)}
+            </select>
+            <label className="flex items-center gap-1"><input type="checkbox" checked={filtro.soEmail} onChange={(e) => setFiltro({ ...filtro, soEmail: e.target.checked })} />com e-mail</label>
+            <label className="flex items-center gap-1"><input type="checkbox" checked={filtro.soTel} onChange={(e) => setFiltro({ ...filtro, soTel: e.target.checked })} />com telefone</label>
+            <span className="ml-auto text-xs text-slate-500">{visiveis.length} de {contatos.length} pessoas</span>
+          </div>
           <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
-            {contatos.map((c) => (
+            {visiveis.map((c) => (
               <li key={c.id} className="space-y-2 p-4 text-sm">
                 <div className="flex flex-wrap justify-between gap-2">
                   <span>

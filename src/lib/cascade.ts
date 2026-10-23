@@ -3,6 +3,7 @@ import type {
   EntradaBuscaContatos,
   ProvedorContatos,
 } from "./providers/types";
+import { inferirEmails, unirPessoas } from "./pessoas";
 
 export interface Tentativa {
   provedor: string;
@@ -65,8 +66,8 @@ export async function buscarEmCascata(
     if (verificados >= minimoVerificados) break;
   }
 
-  const contatos = [...porChave.values()].sort(
-    (a, b) => b.confianca - a.confianca,
-  );
+  // Mesma pessoa em fontes diferentes vira um contato só, com mais dados e mais confiança.
+  const unidos = inferirEmails(unirPessoas([...porChave.values()]), entrada.empresa.dominio);
+  const contatos = unidos.sort((a, b) => b.confianca - a.confianca);
   return { contatos, tentativas };
 }

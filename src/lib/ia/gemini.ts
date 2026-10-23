@@ -62,3 +62,21 @@ export async function testarGemini(prompt: string, f: typeof fetch = fetch): Pro
     return { ok: false, chave: true, erro: (e as Error).message };
   }
 }
+
+/** Pede uma resposta em JSON ao Gemini e já a converte. Devolve null se a resposta não for JSON válido. */
+export async function gerarJson<T>(chave: string, modelo: string, prompt: string, f: typeof fetch = fetch): Promise<T | null> {
+  const r = await f(`${BASE}/models/${modelo}:generateContent`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": chave },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0 } }),
+    signal: AbortSignal.timeout(45000),
+  });
+  if (!r.ok) throw new Error(`Gemini (${modelo}): HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
+  const j = (await r.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+  const texto = (j.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("").trim();
+  try {
+    return JSON.parse(texto.replace(/^```(?:json)?|```$/g, "")) as T;
+  } catch {
+    return null;
+  }
+}

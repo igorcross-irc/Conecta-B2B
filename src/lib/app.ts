@@ -4,6 +4,9 @@ import { BrasilApi, EmpresaEmCascata } from "./providers/brasilapi";
 import { CnpjaAberta } from "./providers/cnpja";
 import { SiteEmpresa } from "./providers/site";
 import { SociosReceita } from "./providers/socios";
+import { Hunter } from "./providers/hunter";
+import { BuscaWebPessoas } from "./providers/buscaweb";
+import { chaveGemini } from "./ia/gemini";
 import { EmpresaDemo, ProvedorDemo } from "./providers/mock";
 import { obterSessao } from "./sessao";
 import { criarServicosPg, type ServicosPg } from "./servicosPg";
@@ -30,7 +33,15 @@ function provedores() {
   const site = new SiteEmpresa();
   return {
     empresa: new EmpresaEmCascata([new BrasilApi(), new CnpjaAberta()]),
-    contatos: [new SociosReceita(), site],
+    contatos: [
+      new SociosReceita(),
+      site,
+      // Fontes extras entram quando a chave existe no ambiente (Vercel → Settings → Environment Variables).
+      ...(process.env.HUNTER_API_KEY ? [new Hunter(process.env.HUNTER_API_KEY)] : []),
+      ...(process.env.TAVILY_API_KEY && chaveGemini()
+        ? [new BuscaWebPessoas(process.env.TAVILY_API_KEY, chaveGemini()!, process.env.GEMINI_MODEL)]
+        : []),
+    ],
     descobridor: (dominio: string) => site.descobrirCnpjs(dominio),
   };
 }

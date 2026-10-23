@@ -611,7 +611,19 @@ export function criarServicosPg({
       };
       try {
         await etapa("Consultando a empresa nas bases públicas");
-        const empresa = await servicos.consultarEmpresa(job.cnpj as string);
+        let empresa = await servicos.consultarEmpresa(job.cnpj as string);
+        // Alvo só por site: tenta achar o CNPJ publicado no site para trazer o quadro societário (sócios).
+        if ((job.cnpj as string).startsWith("site:") && empresa.socios.length === 0) {
+          try {
+            const r = await servicos.resolverSite((job.cnpj as string).slice(5));
+            if (r.candidatos.length === 1) {
+              const doCnpj = await servicos.consultarEmpresa(r.candidatos[0].cnpj);
+              empresa = { ...empresa, socios: doCnpj.socios };
+            }
+          } catch {
+            /* sem CNPJ no site: segue só com as fontes de site e web */
+          }
+        }
         const { contatos, doPool } = await coletar(empresa, job.cargos as string[], (p) =>
           etapa(`Consultando: ${p}`),
         );
