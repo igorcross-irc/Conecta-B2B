@@ -11,6 +11,7 @@
  */
 import { createInterface } from "node:readline";
 import { createWriteStream, existsSync, mkdirSync, renameSync } from "node:fs";
+import https from "node:https";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import unzipper from "unzipper";
@@ -26,18 +27,49 @@ const BASE = process.env.RFB_BASE ?? "https://dadosabertos.rfb.gov.br/CNPJ/dados
 const norm = (v: string) => v.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const PORTE: Record<string, string> = { "00": "Não informado", "01": "Micro empresa", "03": "Empresa de pequeno porte", "05": "Demais" };
 
+/** Download por https sem checar a cadeia de certificados (o servidor da Receita costuma servir a cadeia incompleta). Só para dados públicos. */
+function baixarSemVerificar(url: string, destino: string, saltos = 5): Promise<void> {
+  return new Promise((ok, falha) => {
+    https
+      .get(url, { rejectUnauthorized: false }, (res) => {
+        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && saltos > 0) {
+          res.resume();
+          return baixarSemVerificar(new URL(res.headers.location, url).toString(), destino, saltos - 1).then(ok, falha);
+        }
+        if (res.statusCode !== 200) {
+          res.resume();
+          return falha(new Error(`HTTP ${res.statusCode}`));
+        }
+        pipeline(res, createWriteStream(destino + ".parcial")).then(() => { renameSync(destino + ".parcial", destino); ok(); }, falha);
+      })
+      .on("error", falha);
+  });
+}
+
+const motivo = (e: unknown) => {
+  const x = e as { message?: string; cause?: { code?: string; message?: string } };
+  return `${x.message ?? e}${x.cause ? ` [${x.cause.code ?? ""} ${x.cause.message ?? ""}]` : ""}`;
+};
+
 async function baixar(url: string, destino: string): Promise<void> {
+  let semVerificar = false;
   for (let tentativa = 1; tentativa <= 6; tentativa++) {
     try {
+      if (semVerificar) return await baixarSemVerificar(url, destino);
       const r = await fetch(url, { signal: AbortSignal.timeout(30 * 60 * 1000) });
       if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
       await pipeline(Readable.fromWeb(r.body as never), createWriteStream(destino + ".parcial"));
       renameSync(destino + ".parcial", destino);
       return;
     } catch (e) {
-      console.log(`Falha ao baixar ${url} (tentativa ${tentativa}/6): ${(e as Error).message}`);
+      const m = motivo(e);
+      console.log(`Falha ao baixar ${url} (tentativa ${tentativa}/6): ${m}`);
+      if (/CERT|SIGNATURE|SELF.SIGNED|issuer/i.test(m) && !semVerificar) {
+        console.log("Problema de certificado do servidor da Receita: repetindo sem verificar a cadeia (dados públicos).");
+        semVerificar = true;
+      }
       if (tentativa === 6) throw e;
-      await new Promise((ok) => setTimeout(ok, 3000 * tentativa));
+      await new Promise((r) => setTimeout(r, 3000 * tentativa));
     }
   }
 }
