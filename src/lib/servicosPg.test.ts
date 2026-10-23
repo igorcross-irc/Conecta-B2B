@@ -418,3 +418,29 @@ describe("base colaborativa", () => {
     expect((await s.buscasRecentes())[0]).toMatchObject({ empresa: "EMPRESA DE TESTE SA", status: "concluida" });
   });
 });
+
+describe("busca por site", () => {
+  it("acha o CNPJ pelo site, associa na base e reaproveita depois sem visitar o site", async () => {
+    const db = await abrirBancoLocal("memory://", 5);
+    let visitas = 0;
+    const s = criarServicosPg({
+      db, empresa: provedorEmpresa, contatos: [new ProvedorDemo()],
+      descobridor: async () => { visitas++; return [{ cnpj: "33000167000101", ocorrencias: 2 }]; },
+    });
+    const r = await s.resolverSite("https://www.acme.com.br/contato");
+    expect(r.dominio).toBe("acme.com.br");
+    expect(r.origem).toBe("site");
+    expect(r.candidatos.map((c) => c.cnpj)).toEqual(["33000167000101"]);
+    await s.associarSite("33000167000101", "acme.com.br");
+    const de_novo = await s.resolverSite("acme.com.br");
+    expect(de_novo.origem).toBe("base");
+    expect(visitas).toBe(1);
+  });
+
+  it("sem CNPJ no site, pede o CNPJ; site inválido é recusado", async () => {
+    const db = await abrirBancoLocal("memory://", 5);
+    const s = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [new ProvedorDemo()], descobridor: async () => [] });
+    await expect(s.resolverSite("vazio.com.br")).rejects.toThrow(/CNPJ/);
+    await expect(s.resolverSite("not a site")).rejects.toThrow(/inválido/);
+  });
+});

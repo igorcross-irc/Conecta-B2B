@@ -78,6 +78,8 @@ interface Dependencias {
   ator?: Ator;
   empresa: ProvedorEmpresa;
   contatos: ProvedorContatos[];
+  /** Acha CNPJs publicados num site (para buscar a empresa pelo endereço do site). */
+  descobridor?: (dominio: string) => Promise<{ cnpj: string; ocorrencias: number }[]>;
   org?: string;
 }
 
@@ -131,6 +133,7 @@ export function criarServicosPg({
   db,
   empresa: provedorEmpresa,
   contatos: provedores,
+  descobridor,
   org = ORG_DEMO,
   ator = { usuarioId: USUARIO_DEMO, papel: "administrador", operadora: true },
 }: Dependencias) {
@@ -374,6 +377,57 @@ export function criarServicosPg({
       }
       const info = await um<{ dominio: string | null }>("select dominio from base_empresa_info where cnpj = $1", [digitos]);
       return info?.dominio ? { ...e, dominio: info.dominio } : e;
+    },
+
+    /**
+     * Empresa pelo endereço do site. Primeiro a base comum (sites já associados a um CNPJ);
+     * depois lê o próprio site atrás de um CNPJ publicado. Devolve candidatos para a pessoa confirmar.
+     */
+    async resolverSite(entrada: string) {
+      const dominio = dominioSeguro(entrada)?.replace(/^www\./, "");
+      if (!dominio) throw new ErroDeNegocio("Site inválido. Use algo como empresa.com.br.");
+      const conhecidos = await db.query<{ cnpj: string }>(
+        `select cnpj from base_empresa_info where dominio in ($1, 'www.' || $1)
+         union select cnpj from empresa_cache where dados->>'dominio' in ($1, 'www.' || $1)`,
+        [dominio],
+      );
+      let cnpjs = conhecidos.rows.map((r) => r.cnpj);
+      let origem: "base" | "site" = "base";
+      if (cnpjs.length === 0) {
+        if (!descobridor) throw new ErroDeNegocio("A busca por site não está disponível neste ambiente. Informe o CNPJ.");
+        origem = "site";
+        cnpjs = (await descobridor(dominio)).map((x) => x.cnpj);
+      }
+      const candidatos: { cnpj: string; razaoSocial: string; nomeFantasia?: string; municipio?: string; uf?: string; situacao?: string }[] = [];
+      for (const cnpj of cnpjs.slice(0, 4)) {
+        try {
+          const e = await servicos.consultarEmpresa(cnpj);
+          candidatos.push({ cnpj: e.cnpj, razaoSocial: e.razaoSocial, nomeFantasia: e.nomeFantasia, municipio: e.municipio, uf: e.uf, situacao: e.situacao });
+        } catch {
+          /* CNPJ citado no site que a Receita não conhece: ignora */
+        }
+      }
+      if (candidatos.length === 0)
+        throw new ErroDeNegocio("Não encontrei um CNPJ publicado nesse site. Informe o CNPJ da empresa.", 404);
+      return { dominio, origem, candidatos };
+    },
+
+    /** Guarda na base comum que este site pertence a este CNPJ, sem sobrescrever o que a comunidade já corrigiu. */
+    async associarSite(cnpj: string, site: string) {
+      if (!cnpjValido(cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      const dominio = dominioSeguro(site)?.replace(/^www\./, "");
+      if (!dominio) return;
+      const d = somenteDigitos(cnpj);
+      const antes = await um<{ dominio: string | null }>("select dominio from base_empresa_info where cnpj = $1", [d]);
+      if (antes?.dominio) return;
+      await db.query(
+        `insert into base_empresa_info (cnpj, dominio, atualizado_por) values ($1,$2,$3)
+         on conflict (cnpj) do update set dominio = coalesce(base_empresa_info.dominio, excluded.dominio),
+           atualizado_por = excluded.atualizado_por, atualizado_em = now()`,
+        [d, dominio, ator.usuarioId],
+      );
+      await db.query("delete from pool_busca where cnpj = $1", [d]);
+      await auditar("base.empresa", d, { dominio });
     },
 
     /** Quantos contatos já estão no pool para esta empresa (grátis: é a prévia antes de gastar crédito). */

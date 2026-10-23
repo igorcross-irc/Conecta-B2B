@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { BrasilApi, EmpresaEmCascata, mapearBrasilApi } from "./brasilapi";
 import { SociosReceita } from "./socios";
 import {
-  SiteEmpresa, dominioSeguro, enderecoPrivado, extrairEmails, extrairTelefones, permitidoPorRobots,
+  SiteEmpresa,
+  extrairCnpjs, dominioSeguro, enderecoPrivado, extrairEmails, extrairTelefones, permitidoPorRobots,
 } from "./site";
 import type { Empresa } from "./types";
 
@@ -116,5 +117,35 @@ describe("site da empresa", () => {
     expect(geral.emailStatus).toBe("nao_verificado");
     expect(geral.origem).toMatch(/acme\.com\.br/);
     expect(geral.telefone).toBe("(21) 33334444");
+  });
+});
+
+describe("busca de CNPJ pelo site", () => {
+  it("extrai só CNPJs com dígitos verificadores válidos", () => {
+    const html = "<footer>Acme Ltda - CNPJ: 33.000.167/0001-01 &middot; outro 11.111.111/1111-11 &middot; 12.345.678/0001-00</footer>";
+    expect(extrairCnpjs(html)).toEqual(["33000167000101"]);
+    expect(extrairCnpjs("CNPJ 33000167000101")).toEqual(["33000167000101"]);
+  });
+
+  it("descobre o CNPJ seguindo redirecionamento para www e ordena por ocorrências", async () => {
+    const visitados: string[] = [];
+    const http = (async (url: string) => {
+      const u = new URL(url);
+      visitados.push(u.host + u.pathname);
+      if (u.host === "acme.com.br" && u.pathname === "/") return new Response("", { status: 301, headers: { location: "https://www.acme.com.br/" } });
+      if (u.host === "www.acme.com.br" && u.pathname === "/") return new Response("CNPJ 33.000.167/0001-01", { status: 200, headers: { "content-type": "text/html" } });
+      if (u.pathname === "/termos-de-uso") return new Response("33.000.167/0001-01 e 00.000.000/0001-91", { status: 200, headers: { "content-type": "text/html" } });
+      return new Response("", { status: 404 });
+    }) as unknown as typeof fetch;
+    const r = await new SiteEmpresa({ http, resolver: async () => ["93.184.216.34"] }).descobrirCnpjs("https://acme.com.br/");
+    expect(r[0]).toEqual({ cnpj: "33000167000101", ocorrencias: 2 });
+    expect(r.map((x) => x.cnpj)).toContain("00000000000191");
+  });
+
+  it("não visita endereços internos", async () => {
+    let chamou = false;
+    const http = (async () => { chamou = true; return new Response(""); }) as unknown as typeof fetch;
+    expect(await new SiteEmpresa({ http, resolver: async () => ["127.0.0.1"] }).descobrirCnpjs("interno.com.br")).toEqual([]);
+    expect(chamou).toBe(false);
   });
 });

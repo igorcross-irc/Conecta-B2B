@@ -26,9 +26,11 @@ function provedores() {
   if (process.env.CONECTA_MODO_DEMO === "1") {
     return { empresa: new EmpresaDemo(), contatos: [new ProvedorDemo()] };
   }
+  const site = new SiteEmpresa();
   return {
     empresa: new EmpresaEmCascata([new BrasilApi(), new CnpjaAberta()]),
-    contatos: [new SociosReceita(), new SiteEmpresa()],
+    contatos: [new SociosReceita(), site],
+    descobridor: (dominio: string) => site.descobrirCnpjs(dominio),
   };
 }
 

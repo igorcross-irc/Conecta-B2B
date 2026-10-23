@@ -1,5 +1,6 @@
 import { promises as dns } from "node:dns";
 import { isIP } from "node:net";
+import { cnpjValido, somenteDigitos } from "../cnpj";
 import type { Contato, EntradaBuscaContatos, ProvedorContatos } from "./types";
 
 /**
@@ -11,6 +12,7 @@ import type { Contato, EntradaBuscaContatos, ProvedorContatos } from "./types";
 
 const AGENTE = "ConectaB2B-Bot/0.1 (coleta de contato profissional publicado no site; opt-out em /optout)";
 const CAMINHOS = ["/", "/contato", "/fale-conosco", "/sobre", "/quem-somos", "/equipe"];
+const CAMINHOS_CNPJ = ["/", "/contato", "/fale-conosco", "/sobre", "/quem-somos", "/politica-de-privacidade", "/privacidade", "/termos-de-uso", "/termos"];
 const MAX_BYTES = 500_000;
 const PRAZO_MS = 8_000;
 
@@ -47,6 +49,19 @@ export function dominioSeguro(d: string): string | null {
 
 const RE_EMAIL = /[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi;
 const RE_TEL = /\(?\b\d{2}\)?[\s.-]?9?\d{4}[\s.-]?\d{4}\b/g;
+
+const RE_CNPJ = /(?<!\d)\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}(?!\d)|CNPJ[^0-9]{0,15}(\d{14})(?!\d)/gi;
+
+/** CNPJs com dígitos verificadores válidos que aparecem no texto da página (sem repetir). */
+export function extrairCnpjs(html: string): string[] {
+  const texto = textoVisivel(html);
+  const achados = new Set<string>();
+  for (const m of texto.matchAll(RE_CNPJ)) {
+    const d = somenteDigitos(m[1] ?? m[0]);
+    if (cnpjValido(d)) achados.add(d);
+  }
+  return [...achados];
+}
 
 function textoVisivel(html: string): string {
   return html
@@ -121,19 +136,27 @@ export class SiteEmpresa implements ProvedorContatos {
     this.resolver = resolver;
   }
 
-  private async baixar(host: string, caminho: string): Promise<string | null> {
+  private async baixar(host: string, caminho: string, saltos = 0): Promise<string | null> {
     const ips = await this.resolver(host).catch(() => []);
     if (!ips.length || ips.some(enderecoPrivado)) return null;
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), PRAZO_MS);
     try {
-      // Redirecionamento manual: só dentro do mesmo domínio, para não sair para outro lugar.
+      // Redirecionamento manual: só dentro do mesmo site (com ou sem www), para não sair para outro lugar.
       const res = await this.http(`https://${host}${caminho}`, {
         headers: { "User-Agent": AGENTE, Accept: "text/html,text/plain" },
         redirect: "manual",
         signal: ctl.signal,
         cache: "no-store",
       });
+      if (res.status >= 300 && res.status < 400 && saltos < 2) {
+        const destino = new URL(res.headers.get("location") ?? "", `https://${host}${caminho}`);
+        const semWww = (h: string) => h.replace(/^www\./, "");
+        if (destino.protocol === "https:" && semWww(destino.hostname) === semWww(host)) {
+          return await this.baixar(destino.hostname, destino.pathname + destino.search, saltos + 1);
+        }
+        return null;
+      }
       if (!res.ok || !/text\/(html|plain)/.test(res.headers.get("content-type") ?? "text/plain")) return null;
       return (await res.text()).slice(0, MAX_BYTES);
     } catch {
@@ -141,6 +164,27 @@ export class SiteEmpresa implements ProvedorContatos {
     } finally {
       clearTimeout(t);
     }
+  }
+
+  /**
+   * Procura CNPJs publicados no site (rodapé, contato, política de privacidade e termos).
+   * Devolve os CNPJs válidos em ordem de quantas vezes aparecem. Respeita robots.txt.
+   */
+  async descobrirCnpjs(dominioInformado: string): Promise<{ cnpj: string; ocorrencias: number }[]> {
+    const dominio = dominioSeguro(dominioInformado)?.replace(/^www\./, "");
+    if (!dominio) return [];
+    const contagem = new Map<string, number>();
+    for (const host of [`www.${dominio}`, dominio]) {
+      const robots = (await this.baixar(host, "/robots.txt")) ?? "";
+      for (const caminho of CAMINHOS_CNPJ) {
+        if (robots && !permitidoPorRobots(robots, caminho)) continue;
+        const html = await this.baixar(host, caminho);
+        if (!html) continue;
+        for (const c of extrairCnpjs(html)) contagem.set(c, (contagem.get(c) ?? 0) + 1);
+      }
+      if (contagem.size) break;
+    }
+    return [...contagem].map(([cnpj, ocorrencias]) => ({ cnpj, ocorrencias })).sort((a, b) => b.ocorrencias - a.ocorrencias);
   }
 
   async buscar({ empresa }: EntradaBuscaContatos): Promise<Contato[]> {

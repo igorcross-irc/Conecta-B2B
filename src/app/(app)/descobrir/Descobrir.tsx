@@ -69,8 +69,19 @@ interface Busca {
   saldo?: number;
 }
 
+interface Candidato {
+  cnpj: string;
+  razaoSocial: string;
+  nomeFantasia?: string;
+  municipio?: string;
+  uf?: string;
+  situacao?: string;
+}
+
 export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }) {
   const [cnpj, setCnpj] = useState(cnpjInicial);
+  const [candidatos, setCandidatos] = useState<Candidato[] | null>(null);
+  const [siteBuscado, setSiteBuscado] = useState("");
   const [cargos, setCargos] = useState("comercial, marketing");
   const [empresa, setEmpresa] = useState<Empresa | null>(null);
   const [contatos, setContatos] = useState<Contato[]>([]);
@@ -121,18 +132,32 @@ export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }
     }
   }
 
+  const carregar = async (cnpjEscolhido: string, site?: string) => {
+    const q = encodeURIComponent(cnpjEscolhido);
+    setCnpj(cnpjEscolhido);
+    setCandidatos(null);
+    setEmpresa(await chamar<Empresa>(`/api/empresa?cnpj=${q}${site ? `&site=${encodeURIComponent(site)}` : ""}`));
+    setSinais(await chamar<Sinal[]>(`/api/sinais?cnpj=${q}`));
+    setDisponiveis((await chamar<{ disponiveis: number }>(`/api/decisores/disponiveis?cnpj=${q}`)).disponiveis);
+    // Retoma uma busca recente (em andamento ou concluída) desta empresa.
+    aplicarBusca(await chamar<Busca | null>(`/api/decisores/busca?cnpj=${q}`));
+  };
+
   const buscarEmpresa = (e: React.FormEvent) => {
     e.preventDefault();
     setContatos([]);
     setBusca(null);
     setDisponiveis(null);
+    setEmpresa(null);
+    setCandidatos(null);
     void executar(async () => {
-      const q = encodeURIComponent(cnpj);
-      setEmpresa(await chamar<Empresa>(`/api/empresa?cnpj=${q}`));
-      setSinais(await chamar<Sinal[]>(`/api/sinais?cnpj=${q}`));
-      setDisponiveis((await chamar<{ disponiveis: number }>(`/api/decisores/disponiveis?cnpj=${q}`)).disponiveis);
-      // Retoma uma busca recente (em andamento ou concluída) desta empresa.
-      aplicarBusca(await chamar<Busca | null>(`/api/decisores/busca?cnpj=${q}`));
+      const digitos = cnpj.replace(/\D/g, "");
+      if (digitos.length === 14) return carregar(cnpj);
+      // Não é CNPJ: trata como endereço do site e procura o CNPJ da empresa.
+      const r = await chamar<{ dominio: string; candidatos: Candidato[] }>(`/api/empresa?site=${encodeURIComponent(cnpj)}`);
+      setSiteBuscado(r.dominio);
+      if (r.candidatos.length === 1) return carregar(r.candidatos[0].cnpj, r.dominio);
+      setCandidatos(r.candidatos);
     });
   };
 
@@ -175,12 +200,12 @@ export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }
 
       <form onSubmit={buscarEmpresa} className="flex flex-wrap items-end gap-3">
         <label className="text-sm">
-          CNPJ da empresa
+          CNPJ ou site da empresa
           <input
             value={cnpj}
             onChange={(e) => setCnpj(e.target.value)}
-            placeholder="00.000.000/0000-00"
-            className="mt-1 block w-60 rounded-md border border-slate-300 px-3 py-2"
+            placeholder="00.000.000/0000-00 ou empresa.com.br"
+            className="mt-1 block w-80 max-w-full rounded-md border border-slate-300 px-3 py-2"
           />
         </label>
         <button
@@ -193,6 +218,25 @@ export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }
 
       {erro && <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{erro}</p>}
       {aviso && <p className="rounded-md bg-green-50 p-3 text-sm text-green-800">{aviso}</p>}
+
+      {candidatos && (
+        <section className="space-y-2 rounded-lg border border-slate-200 bg-white p-4 text-sm">
+          <p className="font-medium">Encontrei mais de um CNPJ em {siteBuscado}. Qual é a empresa?</p>
+          <ul className="space-y-2">
+            {candidatos.map((c) => (
+              <li key={c.cnpj} className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  <b>{c.nomeFantasia ?? c.razaoSocial}</b>
+                  <span className="text-slate-500"> · {c.cnpj}{c.municipio && ` · ${c.municipio}/${c.uf}`}</span>
+                </span>
+                <button type="button" disabled={ocupado} onClick={() => void executar(() => carregar(c.cnpj, siteBuscado))} className="rounded-md border border-marca-700 px-3 py-1 text-marca-700 hover:bg-marca-50 disabled:opacity-50">
+                  Esta
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {empresa && (
         <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">

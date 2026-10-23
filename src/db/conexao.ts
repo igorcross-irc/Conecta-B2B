@@ -60,7 +60,8 @@ export async function abrirBanco(): Promise<Banco> {
         },
       }),
     };
-    await garantirDemo(banco.comUsuario(USUARIO_DEMO));
+    // Dados de demonstração só existem sem login configurado; com login (produção) a base nasce limpa.
+    if (!process.env.NEON_AUTH_BASE_URL) await garantirDemo(banco.comUsuario(USUARIO_DEMO));
   }
   return banco;
 }
