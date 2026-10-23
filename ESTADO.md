@@ -85,3 +85,5 @@ O parágrafo de abertura de docs/especificacao-funcional.md ainda diz que o site
 - **Teste de IA:** `/admin/ia` (só operadora), `src/lib/ia/gemini.ts`; lê `GEMINI_API_KEY` (ou `GOOGLE_API_KEY`), `GEMINI_MODEL` opcional; lista modelos e escolhe flash-lite mais novo.
 - **Não verificado (sandbox sem internet):** formatos reais das APIs, download da Receita, resposta real do Gemini.
 - **Próximos:** descoberta de pessoas por busca web (Tavily/Serper + Gemini), verificação de e-mail (MX), papel de banco sem owner, e-mails de convite/opt-out.
+
+- **Importação RJ (23/10 noite):** rodou no GitHub Actions a partir do espelho Hugging Face: 2.222.761 matrizes ativas do RJ (~450 B/linha com índices). Os índices trigram foram REMOVIDOS do Neon (db/neon/0006 agora é opcional/comentado) para caber em 1 GB; a pesquisa por nome faz varredura (mais lenta, ok). SP junto não cabe no plano free (precisaria de plano pago). Trocar a senha do Neon (vazou no chat) e atualizar DATABASE_URL na Vercel e no GitHub.
