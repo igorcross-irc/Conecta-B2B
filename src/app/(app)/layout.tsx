@@ -40,7 +40,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         saldo={saldo}
         atalhos={[
           { href: "/pesquisar", rotulo: "Pesquisar" },
-          { href: "/descobrir", rotulo: "Descobrir", secao: "Prospecção" },
+          { href: "/descobrir", rotulo: "Descobrir" },
           { href: "/listas", rotulo: "Listas" },
           { href: "/base", rotulo: "Base" },
         ]}
