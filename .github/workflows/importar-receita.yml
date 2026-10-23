@@ -6,7 +6,7 @@ on:
         description: "UFs separadas por vírgula (ex.: RJ ou RJ,SP)"
         default: "RJ"
       mes:
-        description: "Mês da base (AAAA-MM). Vazio = automático"
+        description: "Mês da base (AAAA-MM). Vazio = mês atual, ou o anterior se ainda não existir"
         default: ""
       filiais:
         description: "Incluir filiais? (true/false)"
