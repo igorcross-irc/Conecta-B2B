@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { abrirBancoLocal } from "@/db/local";
+import { abrirBancoLocal, USUARIO_DEMO } from "@/db/local";
 import { ProvedorDemo } from "./providers/mock";
 import type { Empresa, ProvedorEmpresa } from "./providers/types";
 import { ErroDeNegocio } from "./servicos";
@@ -156,5 +156,126 @@ describe("serviços em Postgres local", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("pool compartilhado e busca em segundo plano", () => {
+  const OUTRA_ORG = "00000000-0000-0000-0000-0000000000e0";
+
+  it("a segunda busca (mesmas fontes e cargos) usa o pool e não consulta os provedores", async () => {
+    let chamadas = 0;
+    const contador = { nome: "contador", buscar: async () => { chamadas++; return new ProvedorDemo().buscar({ empresa, cargos: [] }); } };
+    const db = await abrirBancoLocal("memory://", 20);
+    const s = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [contador] });
+    expect(await s.disponiveisNoPool("33000167000101")).toBe(0);
+    await s.buscarDecisores({ cnpj: "33000167000101", cargos: [], chave: "a" });
+    expect(chamadas).toBe(1);
+    expect(await s.disponiveisNoPool("33000167000101")).toBe(3);
+
+    // Outra organização, com o mesmo banco: reaproveita o pool, mas paga o próprio crédito.
+    await db.query("insert into organizacao (id, nome) values ($1, 'Outra')", [OUTRA_ORG]);
+    await db.query("insert into config_tenant (organizacao_id) values ($1)", [OUTRA_ORG]);
+    await db.query("insert into membro values ($1, $2, 'administrador')", [OUTRA_ORG, USUARIO_DEMO]);
+    await db.query(
+      "insert into credito_lancamento (organizacao_id, operacao, valor, saldo_apos, descricao) values ($1,'recarga',5,5,'x')",
+      [OUTRA_ORG],
+    );
+    const s2 = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [contador], org: OUTRA_ORG });
+    const r = await s2.buscarDecisores({ cnpj: "33000167000101", cargos: [], chave: "b" });
+    expect(chamadas).toBe(1);
+    expect(r.contatos).toHaveLength(3);
+    expect(r.saldo).toBe(4);
+  });
+
+  it("cargos diferentes ou fontes diferentes geram nova varredura", async () => {
+    let chamadas = 0;
+    const contador = { nome: "contador", buscar: async () => { chamadas++; return []; } };
+    const db = await abrirBancoLocal("memory://", 20);
+    const s = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [contador] });
+    await s.buscarDecisores({ cnpj: "33000167000101", cargos: ["comercial"], chave: "a" });
+    await s.buscarDecisores({ cnpj: "33000167000101", cargos: ["marketing"], chave: "b" });
+    expect(chamadas).toBe(2);
+    const s2 = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [{ ...contador, nome: "outra fonte" }] });
+    await s2.buscarDecisores({ cnpj: "33000167000101", cargos: ["comercial"], chave: "c" });
+    expect(chamadas).toBe(3);
+  });
+
+  it("falha total das fontes não vai para o pool", async () => {
+    const quebrado = { nome: "q", buscar: async () => { throw new Error("fora do ar"); } };
+    const db = await abrirBancoLocal("memory://", 20);
+    const s = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [quebrado] });
+    const r = await s.buscarDecisores({ cnpj: "33000167000101", cargos: [], chave: "a" });
+    expect(r.contatos).toHaveLength(0);
+    expect(r.saldo).toBe(20);
+    expect((await db.query("select count(*)::int c from pool_busca")).rows[0]).toEqual({ c: 0 });
+  });
+
+  it("busca em segundo plano: cobra, acompanha, conclui e é idempotente", async () => {
+    const { s } = await novo();
+    const inicio = await s.iniciarBusca({ cnpj: "33000167000101", cargos: [], chave: "j1" });
+    expect(inicio.status).toBe("em_andamento");
+    expect(await s.saldo()).toBe(19);
+    // Mesma chave: devolve a mesma busca, sem cobrar de novo.
+    expect((await s.iniciarBusca({ cnpj: "33000167000101", cargos: [], chave: "j1" })).id).toBe(inicio.id);
+    expect(await s.saldo()).toBe(19);
+    // Outra chave para a mesma empresa enquanto roda: bloqueada.
+    await expect(s.iniciarBusca({ cnpj: "33000167000101", cargos: [], chave: "j2" })).rejects.toMatchObject({ status: 409 });
+
+    await s.executarBusca(inicio.id);
+    const fim = await s.statusBusca(inicio.id);
+    expect(fim.status).toBe("concluida");
+    expect(fim.contatos).toHaveLength(3);
+    expect(fim.contatos![0].email).toBeUndefined();
+    expect(fim.saldo).toBe(19);
+    expect((await s.ultimaBusca("33000167000101"))?.id).toBe(inicio.id);
+    // Concluída: nova busca da mesma empresa é permitida.
+    expect((await s.iniciarBusca({ cnpj: "33000167000101", cargos: [], chave: "j3" })).status).toBe("em_andamento");
+  });
+
+  it("busca sem resultado devolve o crédito", async () => {
+    const db = await abrirBancoLocal("memory://", 20);
+    const s = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [{ nome: "vazio", buscar: async () => [] }] });
+    const j = await s.iniciarBusca({ cnpj: "33000167000101", cargos: [], chave: "v" });
+    await s.executarBusca(j.id);
+    expect((await s.statusBusca(j.id)).status).toBe("concluida");
+    expect(await s.saldo()).toBe(20);
+  });
+
+  it("busca perdida (sem sinal de vida) vira erro com estorno", async () => {
+    const { db, s } = await novo();
+    const j = await s.iniciarBusca({ cnpj: "33000167000101", cargos: [], chave: "p" });
+    expect(await s.saldo()).toBe(19);
+    await db.query("update busca_job set atualizado_em = now() - interval '10 minutes' where id = $1", [j.id]);
+    const st = await s.statusBusca(j.id);
+    expect(st.status).toBe("erro");
+    expect(await s.saldo()).toBe(20);
+  });
+
+  it("sem saldo não deixa busca presa em andamento", async () => {
+    const { s } = await novo(1);
+    await s.buscarDecisores({ cnpj: "33000167000101", cargos: [], chave: "gasto" });
+    await expect(s.iniciarBusca({ cnpj: "33000167000101", cargos: [], chave: "z" })).rejects.toMatchObject({ status: 402 });
+    // Pode tentar de novo (a busca anterior não ficou em andamento).
+    await expect(s.iniciarBusca({ cnpj: "33000167000101", cargos: [], chave: "z2" })).rejects.toMatchObject({ status: 402 });
+  });
+
+  it("falha numa fonte durante a busca não derruba: o crédito volta se nada for achado", async () => {
+    const db = await abrirBancoLocal("memory://", 20);
+    const quebrada = { nome: "q", buscar: async () => { throw new Error("x"); } };
+    const s = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [quebrada] });
+    const j = await s.iniciarBusca({ cnpj: "33000167000101", cargos: [], chave: "f" });
+    await s.executarBusca(j.id);
+    expect(await s.saldo()).toBe(20);
+  });
+
+  it("opt-out limpa e-mail e telefone também no pool", async () => {
+    const { db, s } = await novo();
+    await s.buscarDecisores({ cnpj: "33000167000101", cargos: [], chave: "o" });
+    expect((await db.query("select contatos::text t from pool_busca")).rows[0]).toMatchObject({ t: expect.stringContaining("pessoa.a@exemplo.com.br") });
+    await s.registrarOptOut("pessoa.a@exemplo.com.br");
+    expect((await db.query("select contatos::text t from pool_busca")).rows[0]).toMatchObject({ t: expect.not.stringContaining("pessoa.a@exemplo.com.br") });
+    // E uma nova busca a partir do pool também não devolve o e-mail.
+    const r = await s.buscarDecisores({ cnpj: "33000167000101", cargos: [], chave: "o2" });
+    expect(r.contatos.some((c) => c.temEmail && c.emailMascarado?.includes("pessoa.a"))).toBe(false);
   });
 });

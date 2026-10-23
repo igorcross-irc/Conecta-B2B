@@ -55,3 +55,11 @@ O parágrafo de abertura de docs/especificacao-funcional.md ainda diz que o site
   - Próximos passos grátis: descobrir o site pela razão social/nome fantasia (ex.: campo para o usuário informar o site; busca em fonte permitida), verificação de domínio por MX, base aberta de CNPJ baixada para busca por CNAE/cidade (Descobrir sem consulta unitária), Gupy/PNCP para sinais.
   - Pendente que exige o Igor: papel de banco limitado (precisa gerar senha nova e trocar a DATABASE_URL; não apliquei no Neon sozinho), confirmação do opt-out por e-mail (precisa de serviço de envio), login real no Neon Auth, lista dos 50 CNPJs.
 
+- 23/10/2026: pool compartilhado e busca em segundo plano (82 testes, typecheck, lint e build ok; fluxo testado por HTTP em modo demonstração).
+  - Migração `0003_pool_e_buscas.sql` (em `supabase/migrations` e `db/neon`): tabelas `pool_busca` (resultado da varredura por empresa, fontes e cargos; compartilhado entre organizações; validade de 30 dias com resultado e 1 dia sem; sem política de leitura) e `busca_job` (busca em andamento por organização). APLICAR NO NEON antes de usar o app contra ele.
+  - O pool é chaveado também pelo conjunto de fontes: trocar ou acrescentar uma fonte (ex.: um provedor pago) gera varredura nova. Falha total das fontes não entra no pool. Opt-out remove a pessoa do pool.
+  - Cada organização continua pagando o próprio crédito ao trazer os contatos; o pool só evita repetir a varredura. Prévia grátis: `GET /api/decisores/disponiveis?cnpj=`.
+  - Busca em segundo plano: `POST /api/decisores/busca` (cobra e responde na hora; o trabalho roda em `after()` do Next), `GET /api/decisores/busca/{id}` (andamento por etapa) e `GET /api/decisores/busca?cnpj=` (retoma a última busca em 24 h). Uma busca em andamento por empresa (409). Busca sem sinal de vida por 5 minutos vira erro com estorno. A tela Descobrir mostra o progresso e retoma ao voltar.
+  - Limite: `after()` roda dentro do prazo da rota (`maxDuration` = 120 s). Se um dia as fontes demorarem mais, passar para uma fila (ex.: tabela + worker).
+  - Ainda NÃO existe: landing page pública, configuração de deploy na Vercel (precisa de DATABASE_URL do Neon, NEON_AUTH_BASE_URL e NEON_AUTH_COOKIE_SECRET; o banco local PGlite não funciona na Vercel) e busca de pessoas/LinkedIn por busca na web (item 3 proposto).
+

@@ -28,7 +28,7 @@ export async function abrirBancoLocal(
       create function auth.uid() returns uuid language sql stable as $$
         select nullif(current_setting('request.jwt.sub', true), '')::uuid $$;
     `);
-    for (const arquivo of ["0001_init.sql", "0002_onboarding.sql"]) {
+    for (const arquivo of ["0001_init.sql", "0002_onboarding.sql", "0003_pool_e_buscas.sql"]) {
       await db.exec(readFileSync(join(process.cwd(), "supabase/migrations", arquivo), "utf8"));
     }
     await db.exec(`

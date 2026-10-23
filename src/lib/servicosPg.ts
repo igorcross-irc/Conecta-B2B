@@ -1,5 +1,5 @@
 import type { Db } from "@/db/conexao";
-import { buscarEmCascata } from "./cascade";
+import { buscarEmCascata, type Tentativa } from "./cascade";
 import { TABELA_CUSTOS_PADRAO, type Lancamento, type TabelaCustos } from "./credits";
 import { cnpjValido, somenteDigitos } from "./cnpj";
 import { lerCsv, normalizarCabecalho } from "./csv";
@@ -12,6 +12,23 @@ import {
   type ContatoGuardado,
   type ContatoVisivel,
 } from "./servicos";
+
+export interface EstadoBusca {
+  id: string;
+  cnpj: string;
+  status: "em_andamento" | "concluida" | "erro";
+  etapa: string;
+  /** Verdadeiro quando o resultado veio de uma varredura anterior (pool), sem consultar as fontes de novo. */
+  doPool: boolean;
+  erro?: string;
+  contatos?: ContatoVisivel[];
+  saldo?: number;
+}
+
+/** Validade do resultado no pool: 30 dias quando achou alguém, 1 dia quando não achou nada. */
+const VALIDADE_SQL = "case when jsonb_array_length(contatos) > 0 then interval '30 days' else interval '1 day' end";
+/** Uma busca sem sinal de vida por tanto tempo é considerada perdida (servidor reiniciou ou excedeu o prazo). */
+const TEMPO_MAXIMO_BUSCA_MIN = 5;
 
 export interface ListaPg {
   id: string;
@@ -107,6 +124,127 @@ export function criarServicosPg({
     }
   }
 
+  /** Identifica o conjunto de fontes: mudar as fontes invalida o pool, para não servir resultado de outra configuração. */
+  const fonteChave = provedores.map((p) => p.nome).join("|");
+
+  async function saiuDaBase(): Promise<Set<string>> {
+    return new Set((await db.query<{ email: string }>("select email from opt_out")).rows.map((r) => r.email));
+  }
+
+  /**
+   * Junta os contatos de uma empresa: usa o pool se houver varredura recente das mesmas fontes e cargos;
+   * senão consulta as fontes e guarda o resultado no pool. Falha total das fontes não vai para o pool.
+   */
+  async function coletar(
+    empresa: Empresa,
+    cargosBrutos: string[],
+    progresso?: (provedor: string) => void | Promise<void>,
+  ): Promise<{ contatos: Contato[]; tentativas: Tentativa[]; doPool: boolean }> {
+    const cargos = cargosBrutos.map((c) => c.trim().toLowerCase()).filter(Boolean);
+    const cargosChave = [...new Set(cargos)].sort().join(",");
+    const cnpj = somenteDigitos(empresa.cnpj);
+    const saiu = await saiuDaBase();
+    const naoSaiu = (c: Contato) => !(c.email && saiu.has(c.email.toLowerCase()));
+
+    const cache = await um<{ contatos: Contato[]; tentativas: Tentativa[] }>(
+      `select contatos, tentativas from pool_busca
+        where cnpj = $1 and fonte_chave = $2 and cargos_chave = $3 and obtido_em > now() - (${VALIDADE_SQL})`,
+      [cnpj, fonteChave, cargosChave],
+    );
+    if (cache) return { contatos: cache.contatos.filter(naoSaiu), tentativas: cache.tentativas, doPool: true };
+
+    const { contatos, tentativas } = await buscarEmCascata(
+      provedores,
+      { empresa, cargos },
+      { optOut: (c) => !naoSaiu(c), progresso },
+    );
+    const todasFalharam = tentativas.length > 0 && tentativas.every((t) => t.erro);
+    if (!todasFalharam) {
+      await db.query(
+        `insert into pool_busca (cnpj, fonte_chave, cargos_chave, contatos, tentativas)
+         values ($1,$2,$3,$4::jsonb,$5::jsonb)
+         on conflict (cnpj, fonte_chave, cargos_chave)
+         do update set contatos = excluded.contatos, tentativas = excluded.tentativas, obtido_em = now()`,
+        [cnpj, fonteChave, cargosChave, JSON.stringify(contatos), JSON.stringify(tentativas)],
+      );
+    }
+    return { contatos, tentativas, doPool: false };
+  }
+
+  /** Estorna se nada foi encontrado; senão grava os contatos na organização e devolve os ids. */
+  async function concluirOuEstornar(cnpj: string, contatos: Contato[], cobrancaId: string): Promise<string[]> {
+    if (contatos.length === 0) {
+      try {
+        await db.query("select estornar_creditos($1,$2,$3)", [org, cobrancaId, "nenhum decisor encontrado"]);
+      } catch (e) {
+        traduzir(e);
+      }
+      return [];
+    }
+    const ids: string[] = [];
+    for (const c of contatos) {
+      const r = await um<{ id: string }>(
+        `insert into contato (organizacao_id, cnpj, nome, cargo, senioridade, departamento, linkedin_url,
+           tem_email, tem_telefone, email_status, origem, obtido_em, confianca)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         on conflict (organizacao_id, cnpj, nome, cargo) do update set nome = excluded.nome
+         returning id`,
+        [
+          org, cnpj, c.nome, c.cargo, c.senioridade ?? null, c.departamento ?? null, c.linkedinUrl ?? null,
+          Boolean(c.email), Boolean(c.telefone), c.emailStatus ?? null, c.origem, c.obtidoEm, c.confianca,
+        ],
+      );
+      await db.query(
+        `insert into contato_dado (contato_id, email, telefone) values ($1,$2,$3)
+         on conflict (contato_id) do update set email = coalesce(excluded.email, contato_dado.email),
+           telefone = coalesce(excluded.telefone, contato_dado.telefone)`,
+        [r!.id, c.email ?? null, c.telefone ?? null],
+      );
+      ids.push(r!.id);
+    }
+    return ids;
+  }
+
+  /** Marca a busca como erro e devolve o crédito (uma vez só: o estorno é único por cobrança). */
+  async function falharBusca(jobId: string, cobrancaId: string | null, motivo: string) {
+    if (cobrancaId) {
+      await db.query("select estornar_creditos($1,$2,$3)", [org, cobrancaId, "busca não concluída"]).catch(() => undefined);
+    }
+    await db.query(
+      `update busca_job set status = 'erro', erro = $2, etapa = 'Falhou (crédito devolvido)', atualizado_em = now()
+        where id = $1 and status = 'em_andamento'`,
+      [jobId, motivo],
+    );
+  }
+
+  /** Buscas em andamento sem sinal de vida (servidor reiniciado ou prazo excedido) viram erro com estorno. */
+  async function varrerBuscasPerdidas() {
+    const perdidas = await db.query<Linha>(
+      `select id, cobranca_id from busca_job where organizacao_id = $1 and status = 'em_andamento'
+         and atualizado_em < now() - make_interval(mins => $2)`,
+      [org, TEMPO_MAXIMO_BUSCA_MIN],
+    );
+    for (const p of perdidas.rows) {
+      await falharBusca(p.id as string, (p.cobranca_id as string) ?? null, "A busca foi interrompida.");
+    }
+  }
+
+  async function estadoDoJob(j: Linha): Promise<EstadoBusca> {
+    const estado: EstadoBusca = {
+      id: j.id as string,
+      cnpj: j.cnpj as string,
+      status: j.status as EstadoBusca["status"],
+      etapa: j.etapa as string,
+      doPool: j.do_pool as boolean,
+      erro: (j.erro as string) ?? undefined,
+    };
+    if (estado.status === "concluida") {
+      estado.contatos = (await guardados((j.contato_ids as string[]) ?? [])).map(visivel);
+      estado.saldo = await saldo();
+    }
+    return estado;
+  }
+
   const servicos = {
     saldo,
     /** Custos do tenant (config_tenant), com os valores padrão para o que não estiver configurado. */
@@ -147,6 +285,18 @@ export function criarServicosPg({
       return e;
     },
 
+    /** Quantos contatos já estão no pool para esta empresa (grátis: é a prévia antes de gastar crédito). */
+    async disponiveisNoPool(cnpj: string): Promise<number> {
+      if (!cnpjValido(cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      const r = await um<{ n: number | null }>(
+        `select max(jsonb_array_length(contatos))::int as n from pool_busca
+          where cnpj = $1 and fonte_chave = $2 and obtido_em > now() - (${VALIDADE_SQL})`,
+        [somenteDigitos(cnpj), fonteChave],
+      );
+      return r?.n ?? 0;
+    },
+
+    /** Busca síncrona (espera o resultado). A interface com tela usa iniciarBusca + statusBusca. */
     async buscarDecisores(params: { cnpj: string; cargos: string[]; chave: string }) {
       const empresa = await servicos.consultarEmpresa(params.cnpj);
       const cobranca = await cobrar(
@@ -155,49 +305,106 @@ export function criarServicosPg({
         `Busca de decisores: ${empresa.razaoSocial}`,
         `busca:${params.chave}`,
       );
-      const cargos = params.cargos.map((c) => c.trim().toLowerCase()).filter(Boolean);
-      const saiu = new Set(
-        (await db.query<{ email: string }>("select email from opt_out")).rows.map((r) => r.email),
-      );
-      const { contatos, tentativas } = await buscarEmCascata(
-        provedores,
-        { empresa, cargos },
-        { optOut: (c) => Boolean(c.email && saiu.has(c.email.toLowerCase())) },
-      );
-      if (contatos.length === 0) {
-        try {
-          await db.query("select estornar_creditos($1,$2,$3)", [org, cobranca.id, "nenhum decisor encontrado"]);
-        } catch (e) {
-          traduzir(e);
-        }
-      }
-      const cnpj = somenteDigitos(params.cnpj);
-      const ids: string[] = [];
-      for (const c of contatos) {
-        const r = await um<{ id: string }>(
-          `insert into contato (organizacao_id, cnpj, nome, cargo, senioridade, departamento, linkedin_url,
-             tem_email, tem_telefone, email_status, origem, obtido_em, confianca)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-           on conflict (organizacao_id, cnpj, nome, cargo) do update set nome = excluded.nome
-           returning id`,
-          [
-            org, cnpj, c.nome, c.cargo, c.senioridade ?? null, c.departamento ?? null, c.linkedinUrl ?? null,
-            Boolean(c.email), Boolean(c.telefone), c.emailStatus ?? null, c.origem, c.obtidoEm, c.confianca,
-          ],
-        );
-        await db.query(
-          `insert into contato_dado (contato_id, email, telefone) values ($1,$2,$3)
-           on conflict (contato_id) do update set email = coalesce(excluded.email, contato_dado.email),
-             telefone = coalesce(excluded.telefone, contato_dado.telefone)`,
-          [r!.id, c.email ?? null, c.telefone ?? null],
-        );
-        ids.push(r!.id);
-      }
+      const { contatos, tentativas } = await coletar(empresa, params.cargos);
+      const ids = await concluirOuEstornar(somenteDigitos(params.cnpj), contatos, cobranca.id);
       return {
         contatos: (await guardados(ids)).map(visivel),
         tentativas,
         saldo: await saldo(),
       };
+    },
+
+    /**
+     * Cria a busca em segundo plano e cobra o crédito. Quem chama deve agendar executarBusca(id)
+     * para depois da resposta. Mesma chave devolve a mesma busca, sem cobrar de novo.
+     */
+    async iniciarBusca(params: { cnpj: string; cargos: string[]; chave: string }): Promise<EstadoBusca> {
+      if (!cnpjValido(params.cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      const cnpj = somenteDigitos(params.cnpj);
+      const existente = await um<Linha>("select id from busca_job where organizacao_id = $1 and chave = $2", [
+        org,
+        params.chave,
+      ]);
+      if (existente) return servicos.statusBusca(existente.id as string);
+      await varrerBuscasPerdidas();
+      const emAndamento = await um<Linha>(
+        "select id from busca_job where organizacao_id = $1 and cnpj = $2 and status = 'em_andamento'",
+        [org, cnpj],
+      );
+      if (emAndamento) throw new ErroDeNegocio("Já estamos buscando os contatos desta empresa.", 409);
+
+      const empresa = await servicos.consultarEmpresa(cnpj);
+      const cargos = params.cargos.map((c) => c.trim().toLowerCase()).filter(Boolean);
+      let job: { id: string };
+      try {
+        job = (await um<{ id: string }>(
+          "insert into busca_job (organizacao_id, cnpj, cargos, chave, etapa) values ($1,$2,$3,$4,$5) returning id",
+          [org, cnpj, cargos, params.chave, "Na fila"],
+        ))!;
+      } catch {
+        throw new ErroDeNegocio("Já estamos buscando os contatos desta empresa.", 409);
+      }
+      try {
+        const cobranca = await cobrar(
+          "busca_decisores",
+          (await servicos.custos()).busca_decisores,
+          `Busca de decisores: ${empresa.razaoSocial}`,
+          `busca:${params.chave}`,
+        );
+        await db.query("update busca_job set cobranca_id = $2 where id = $1", [job.id, cobranca.id]);
+      } catch (e) {
+        await db.query("update busca_job set status = 'erro', erro = $2, etapa = 'Não iniciada' where id = $1", [
+          job.id,
+          e instanceof Error ? e.message : "Falha ao cobrar.",
+        ]);
+        throw e;
+      }
+      return servicos.statusBusca(job.id);
+    },
+
+    /** Executa a busca de um trabalho já criado. Nunca lança: falhas viram status "erro" com estorno. */
+    async executarBusca(jobId: string): Promise<void> {
+      const job = await um<Linha>("select * from busca_job where id = $1 and organizacao_id = $2", [jobId, org]);
+      if (!job || job.status !== "em_andamento") return;
+      const etapa = async (texto: string): Promise<void> => {
+        await db.query("update busca_job set etapa = $2, atualizado_em = now() where id = $1", [jobId, texto]);
+      };
+      try {
+        await etapa("Consultando a empresa nas bases públicas");
+        const empresa = await servicos.consultarEmpresa(job.cnpj as string);
+        const { contatos, doPool } = await coletar(empresa, job.cargos as string[], (p) =>
+          etapa(`Consultando: ${p}`),
+        );
+        await etapa("Organizando os contatos");
+        const ids = await concluirOuEstornar(job.cnpj as string, contatos, job.cobranca_id as string);
+        await db.query(
+          `update busca_job set status = 'concluida', etapa = $2, contato_ids = $3::uuid[], do_pool = $4,
+             atualizado_em = now() where id = $1`,
+          [jobId, ids.length ? "Pronto" : "Nenhum contato encontrado (crédito devolvido)", ids, doPool],
+        );
+      } catch (e) {
+        await falharBusca(jobId, job.cobranca_id as string | null, e instanceof Error ? e.message : "Erro inesperado.");
+      }
+    },
+
+    async statusBusca(jobId: string): Promise<EstadoBusca> {
+      if (!UUID.test(jobId)) throw new ErroDeNegocio("Busca não encontrada.", 404);
+      await varrerBuscasPerdidas();
+      const j = await um<Linha>("select * from busca_job where id = $1 and organizacao_id = $2", [jobId, org]);
+      if (!j) throw new ErroDeNegocio("Busca não encontrada.", 404);
+      return estadoDoJob(j);
+    },
+
+    /** Busca mais recente desta organização para a empresa (últimas 24 h), para retomar a tela. */
+    async ultimaBusca(cnpj: string): Promise<EstadoBusca | null> {
+      if (!cnpjValido(cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
+      await varrerBuscasPerdidas();
+      const j = await um<Linha>(
+        `select * from busca_job where organizacao_id = $1 and cnpj = $2 and criado_em > now() - interval '24 hours'
+          order by criado_em desc limit 1`,
+        [org, somenteDigitos(cnpj)],
+      );
+      return j ? estadoDoJob(j) : null;
     },
 
     async revelar(params: { contatoId: string; campo: "email" | "telefone" }) {
@@ -277,6 +484,14 @@ export function criarServicosPg({
           [r.rows.map((x) => x.contato_id)],
         );
       }
+      // O pool também guarda cópias: quem pediu para sair some dele, como some das buscas novas.
+      await db.query(
+        `update pool_busca set contatos = (
+           select coalesce(jsonb_agg(c) filter (where lower(coalesce(c->>'email', '')) <> $1), '[]'::jsonb)
+             from jsonb_array_elements(contatos) c)
+          where contatos::text ilike '%' || $1 || '%'`,
+        [e],
+      );
       return { contatosAfetados: r.rows.length };
     },
 

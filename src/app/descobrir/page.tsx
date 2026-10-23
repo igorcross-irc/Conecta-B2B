@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface Empresa {
   cnpj: string;
@@ -59,6 +59,16 @@ interface Sinal {
   ocorridoEm: string;
 }
 
+interface Busca {
+  id: string;
+  status: "em_andamento" | "concluida" | "erro";
+  etapa: string;
+  doPool: boolean;
+  erro?: string;
+  contatos?: Contato[];
+  saldo?: number;
+}
+
 export default function Descobrir() {
   const [cnpj, setCnpj] = useState("");
   const [cargos, setCargos] = useState("comercial, marketing");
@@ -70,6 +80,33 @@ export default function Descobrir() {
   const [listaNome, setListaNome] = useState("");
   const [aviso, setAviso] = useState("");
   const [sinais, setSinais] = useState<Sinal[]>([]);
+  const [busca, setBusca] = useState<Busca | null>(null);
+  const [disponiveis, setDisponiveis] = useState<number | null>(null);
+
+  // Guarda o estado da busca e, ao concluir, mostra os contatos.
+  function aplicarBusca(b: Busca | null) {
+    setBusca(b);
+    if (b?.status !== "concluida") return;
+    setContatos(b.contatos ?? []);
+    if (b.saldo !== undefined) setSaldo(b.saldo);
+    if ((b.contatos ?? []).length === 0) setAviso("Nenhum decisor encontrado. A busca foi estornada.");
+  }
+
+  // Acompanha a busca em segundo plano: consulta o andamento a cada 2 s até concluir.
+  const buscaId = busca?.id;
+  const emAndamento = busca?.status === "em_andamento";
+  useEffect(() => {
+    if (!buscaId || !emAndamento) return;
+    const t = setTimeout(async () => {
+      try {
+        aplicarBusca(await chamar<Busca>(`/api/decisores/busca/${buscaId}`));
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : "Erro inesperado.");
+        setBusca(null);
+      }
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [buscaId, emAndamento, busca?.etapa]);
 
   async function executar(fn: () => Promise<void>) {
     setErro("");
@@ -87,22 +124,28 @@ export default function Descobrir() {
   const buscarEmpresa = (e: React.FormEvent) => {
     e.preventDefault();
     setContatos([]);
+    setBusca(null);
+    setDisponiveis(null);
     void executar(async () => {
-      setEmpresa(await chamar<Empresa>(`/api/empresa?cnpj=${encodeURIComponent(cnpj)}`));
-      setSinais(await chamar<Sinal[]>(`/api/sinais?cnpj=${encodeURIComponent(cnpj)}`));
+      const q = encodeURIComponent(cnpj);
+      setEmpresa(await chamar<Empresa>(`/api/empresa?cnpj=${q}`));
+      setSinais(await chamar<Sinal[]>(`/api/sinais?cnpj=${q}`));
+      setDisponiveis((await chamar<{ disponiveis: number }>(`/api/decisores/disponiveis?cnpj=${q}`)).disponiveis);
+      // Retoma uma busca recente (em andamento ou concluída) desta empresa.
+      aplicarBusca(await chamar<Busca | null>(`/api/decisores/busca?cnpj=${q}`));
     });
   };
 
   const buscarDecisores = () =>
     executar(async () => {
-      const r = await chamar<{ contatos: Contato[]; saldo: number }>("/api/decisores", {
-        cnpj,
-        cargos: cargos.split(",").map((c) => c.trim()).filter(Boolean),
-        chave: crypto.randomUUID(),
-      });
-      setContatos(r.contatos);
-      setSaldo(r.saldo);
-      if (r.contatos.length === 0) setAviso("Nenhum decisor encontrado. A busca foi estornada.");
+      setContatos([]);
+      aplicarBusca(
+        await chamar<Busca>("/api/decisores/busca", {
+          cnpj,
+          cargos: cargos.split(",").map((c) => c.trim()).filter(Boolean),
+          chave: crypto.randomUUID(),
+        }),
+      );
     });
 
   const revelar = (contatoId: string, campo: "email" | "telefone") =>
@@ -190,21 +233,49 @@ export default function Descobrir() {
             </label>
             <button
               onClick={buscarDecisores}
-              disabled={ocupado}
+              disabled={ocupado || emAndamento}
               className="rounded-md bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
             >
               Buscar decisores (1 crédito)
             </button>
           </div>
+          {disponiveis !== null && disponiveis > 0 && !busca && (
+            <p className="text-sm text-slate-600">
+              {disponiveis} contato{disponiveis > 1 ? "s" : ""} desta empresa já foram coletados e estão prontos
+              para trazer, sem nova varredura.
+            </p>
+          )}
+          {busca && busca.status !== "concluida" && (
+            <div
+              role="status"
+              className={`rounded-md p-3 text-sm ${busca.status === "erro" ? "bg-red-50 text-red-700" : "bg-indigo-50 text-indigo-900"}`}
+            >
+              {busca.status === "em_andamento" ? (
+                <>
+                  <p className="font-medium">{busca.etapa}…</p>
+                  <p className="text-xs">
+                    Isso costuma levar alguns segundos. Pode sair desta tela: a busca continua e, ao voltar e
+                    buscar a empresa de novo, o resultado aparece.
+                  </p>
+                </>
+              ) : (
+                <p>{busca.erro ?? "A busca falhou."} O crédito foi devolvido.</p>
+              )}
+            </div>
+          )}
+          {busca?.status === "concluida" && busca.doPool && (
+            <p className="text-xs text-slate-500">Resultado reaproveitado de uma varredura recente.</p>
+          )}
         </section>
       )}
 
       {contatos.length > 0 && (
         <section className="space-y-3">
-          <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
-            Modo demonstração: os decisores abaixo são pessoas fictícias. Os provedores reais
-            entram quando houver chaves de API.
-          </p>
+          {contatos.some((c) => c.origem.includes("demonstração")) && (
+            <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+              Modo demonstração: os decisores abaixo são pessoas fictícias.
+            </p>
+          )}
           <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
             {contatos.map((c) => (
               <li key={c.id} className="space-y-2 p-4 text-sm">

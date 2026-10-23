@@ -20,6 +20,8 @@ export interface OpcoesCascata {
   minimoVerificados?: number;
   /** Retorna true para contatos que pediram exclusão (opt-out). */
   optOut?: (contato: Contato) => boolean;
+  /** Chamado antes de consultar cada provedor, para mostrar o andamento. */
+  progresso?: (provedor: string) => void | Promise<void>;
 }
 
 function chave(c: Contato): string {
@@ -34,12 +36,13 @@ function chave(c: Contato): string {
 export async function buscarEmCascata(
   provedores: ProvedorContatos[],
   entrada: EntradaBuscaContatos,
-  { minimoVerificados = 3, optOut }: OpcoesCascata = {},
+  { minimoVerificados = 3, optOut, progresso }: OpcoesCascata = {},
 ): Promise<ResultadoCascata> {
   const porChave = new Map<string, Contato>();
   const tentativas: Tentativa[] = [];
 
   for (const provedor of provedores) {
+    await Promise.resolve(progresso?.(provedor.nome)).catch(() => undefined);
     try {
       const encontrados = await provedor.buscar(entrada);
       tentativas.push({ provedor: provedor.nome, encontrados: encontrados.length });

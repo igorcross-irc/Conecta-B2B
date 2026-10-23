@@ -31,7 +31,7 @@ beforeAll(async () => {
       select nullif(current_setting('request.jwt.sub', true), '')::uuid $$;
     create role cliente;
   `);
-  for (const arquivo of ["0001_init.sql", "0002_onboarding.sql"]) {
+  for (const arquivo of ["0001_init.sql", "0002_onboarding.sql", "0003_pool_e_buscas.sql"]) {
     await db.exec(readFileSync(join(process.cwd(), "supabase/migrations", arquivo), "utf8"));
   }
   await db.exec(`
@@ -134,5 +134,28 @@ describe("migração 0001", () => {
     expect(m.rows).toHaveLength(1);
     await como(USER_A);
     await expect(db.query("select garantir_organizacao($1, 'x')", [novo])).rejects.toThrow();
+  });
+});
+
+describe("migração 0003", () => {
+  it("o cliente não lê o pool; vê só as buscas da própria organização", async () => {
+    await db.exec("reset role");
+    await db.query(
+      "insert into pool_busca (cnpj, fonte_chave, cargos_chave, contatos) values ('33000167000101','f','', '[{\"nome\":\"x\"}]')",
+    );
+    await db.query(
+      `insert into busca_job (organizacao_id, cnpj, chave) values ('${ORG_A}','33000167000101','a'), ('${ORG_B}','33000167000101','b')`,
+    );
+    await como(USER_A);
+    expect((await db.query("select * from pool_busca")).rows).toHaveLength(0);
+    const r = await db.query<{ chave: string }>("select chave from busca_job");
+    expect(r.rows.map((x) => x.chave)).toEqual(["a"]);
+  });
+
+  it("só uma busca em andamento por empresa e organização", async () => {
+    await db.exec("reset role");
+    await expect(
+      db.query(`insert into busca_job (organizacao_id, cnpj, chave) values ('${ORG_A}','33000167000101','dup')`),
+    ).rejects.toThrow();
   });
 });
