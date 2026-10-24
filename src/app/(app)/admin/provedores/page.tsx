@@ -46,7 +46,7 @@ export default async function Provedores() {
               const est = ESTADO[estadoDaFonte(f.chamadas24h, f.falhas24h)];
               const taxa7 = f.chamadas7d ? Math.round(((f.chamadas7d - f.falhas7d) / f.chamadas7d) * 100) : undefined;
               return (
-                <li key={f.provedor} className="cartao space-y-3">
+                <li key={f.provedor} className="cartao min-w-0 space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h2 className="truncate font-semibold">{f.provedor}</h2>
@@ -62,7 +62,7 @@ export default async function Provedores() {
                     <div><dt className="kpi-rotulo">Tempo típico</dt><dd className="font-semibold">{ms(f.p50)}</dd></div>
                     <div><dt className="kpi-rotulo">Tempo p95</dt><dd className="font-semibold">{ms(f.p95)}</dd></div>
                   </dl>
-                  <p className="text-xs text-slate-500">
+                  <p className="break-words text-xs text-slate-500">
                     7 dias: {f.chamadas7d} chamadas{taxa7 !== undefined && <>, {taxa7}% com sucesso</>}
                     {f.itensMedio !== undefined && <> · {f.itensMedio.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} resultado(s) por chamada em média</>}
                     <br />Último sucesso: {quando(f.ultimoSucesso)} · última falha: {quando(f.ultimaFalha)}

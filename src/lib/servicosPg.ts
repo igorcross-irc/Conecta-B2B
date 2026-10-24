@@ -1092,7 +1092,11 @@ export function criarServicosPg({
       return {
         bancoBytes: await n("select pg_database_size(current_database())::bigint as n"),
         // Estimativa do planejador (instantânea); contar 2 milhões de linhas a cada abertura da tela seria lento.
-        empresasReceita: await n("select coalesce((select reltuples::bigint from pg_class where relname = 'rf_estabelecimento'), 0) as n"),
+        empresasReceita: await (async () => {
+          const estimativa = await n("select coalesce((select reltuples::bigint from pg_class where relname = 'rf_estabelecimento'), 0) as n");
+          // Tabela nunca analisada devolve -1: conta de verdade (só acontece até o banco rodar a primeira análise).
+          return estimativa >= 0 ? estimativa : n("select count(*)::int as n from rf_estabelecimento");
+        })(),
         empresasEmCache: await n("select count(*)::int as n from empresa_cache"),
         erros24h: await n("select count(*)::int as n from erro_app where criado_em > now() - interval '24 hours'"),
         falhasFontes24h: await n("select count(*)::int as n from provedor_execucao where not ok and criado_em > now() - interval '24 hours'"),

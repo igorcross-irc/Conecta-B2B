@@ -21,7 +21,7 @@ export default async function Equipe() {
           <h1 className="titulo-pagina">Equipe</h1>
           <p className="sub-pagina max-w-2xl">Quem acessa esta organização. Todos compartilham o mesmo saldo de créditos, listas e histórico de buscas.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <div className="kpi text-center"><p className="kpi-valor">{membros.length}</p><p className="kpi-rotulo">membros</p></div>
           <div className="kpi text-center"><p className="kpi-valor">{admins}</p><p className="kpi-rotulo">administradores</p></div>
           {admin && <div className="kpi text-center"><p className="kpi-valor">{convites.length}</p><p className="kpi-rotulo">convites</p></div>}
