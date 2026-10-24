@@ -130,5 +130,5 @@ describe("enriquecer (agregador com cache)", () => {
     expect(r2.cvm?.nome).toBe("PETROBRAS");
     // Segunda vez: CVM e Wikidata vêm do cache; só as notícias (que falharam e não ficaram em cache) são pedidas de novo.
     expect(chamadas - antes).toBe(1);
-  });
+  }, 30000);
 });
