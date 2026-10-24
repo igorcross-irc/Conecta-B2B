@@ -52,7 +52,7 @@ export function Abordagem({ contatoId }: { contatoId: string }) {
           placeholder="O que você oferece, em uma frase"
           className="campo min-w-0 flex-1"
         />
-        <button onClick={gerar} disabled={ocupado || !proposta.trim()} className="btn">{ocupado ? "Escrevendo…" : "Gerar"}</button>
+        <button onClick={gerar} disabled={ocupado || !proposta.trim()} className="btn-primario">{ocupado ? "Escrevendo…" : "Gerar"}</button>
       </div>
       {erro && <p role="alert" className="aviso-erro">{erro}</p>}
       {mensagem && (

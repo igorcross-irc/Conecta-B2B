@@ -89,7 +89,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="email" value="1" defaultChecked={comEmail} /> Com e-mail cadastral</label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="telefone" value="1" defaultChecked={comTelefone} /> Com telefone cadastral</label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="filiais" value="1" defaultChecked={filiais} /> Incluir filiais (padrão: só matrizes)</label>
-        <button className="btn md:col-span-3 md:justify-self-end">Pesquisar</button>
+        <button className="btn-primario md:col-span-3 md:justify-self-end">Pesquisar</button>
       </form>
 
       {erro && <p role="alert" className="aviso-erro">{erro}</p>}
@@ -101,7 +101,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
           <input type="hidden" name="volta" value={paramsAtuais} />
           <input name="nome" required maxLength={80} placeholder="Nome para salvar esta pesquisa" className="campo flex-1" aria-label="Nome da pesquisa" />
           <label className="flex items-center gap-2"><input type="checkbox" name="avisar" value="1" defaultChecked /> Avisar por e-mail quando houver empresas novas</label>
-          <button className="btn">Salvar pesquisa</button>
+          <button className="btn-primario">Salvar pesquisa</button>
         </form>
       )}
 

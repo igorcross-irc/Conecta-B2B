@@ -44,7 +44,7 @@ export function BuscaNatural() {
           placeholder="Padarias abertas há menos de 3 anos em Niterói, com telefone"
           className="campo flex-1"
         />
-        <button className="btn" disabled={ocupado || !texto.trim()}>{ocupado ? "Entendendo…" : "Buscar com IA"}</button>
+        <button className="btn-primario" disabled={ocupado || !texto.trim()}>{ocupado ? "Entendendo…" : "Buscar com IA"}</button>
       </div>
       {erro && <p role="alert" className="aviso-erro">{erro}</p>}
     </form>
