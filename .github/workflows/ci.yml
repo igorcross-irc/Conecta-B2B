@@ -19,5 +19,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - name: Serviços como o papel de banco limitado
+        run: npm run test:papel
       - name: Build
         run: npm run build

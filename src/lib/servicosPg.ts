@@ -1149,27 +1149,8 @@ export function criarServicosPg({
     async registrarOptOut(email: string): Promise<{ contatosAfetados: number }> {
       const e = email.trim().toLowerCase();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new ErroDeNegocio("E-mail inválido.");
-      await db.query("insert into opt_out (email) values ($1) on conflict do nothing", [e]);
-      const r = await db.query<{ contato_id: string }>(
-        "update contato_dado set email = null, telefone = null where lower(email) = $1 returning contato_id",
-        [e],
-      );
-      if (r.rows.length > 0) {
-        await db.query(
-          "update contato set tem_email = false, tem_telefone = false where id = any($1::uuid[])",
-          [r.rows.map((x) => x.contato_id)],
-        );
-      }
-      // O pool também guarda cópias: quem pediu para sair some dele, como some das buscas novas.
-      await db.query(
-        `update pool_busca set contatos = (
-           select coalesce(jsonb_agg(c) filter (where lower(coalesce(c->>'email', '')) <> $1), '[]'::jsonb)
-             from jsonb_array_elements(contatos) c)
-          where contatos::text ilike '%' || $1 || '%'`,
-        [e],
-      );
-      await db.query("delete from base_contato where lower(email) = $1", [e]);
-      return { contatosAfetados: r.rows.length };
+      const r = await um<{ n: number }>("select aplicar_opt_out($1) as n", [e]);
+      return { contatosAfetados: r?.n ?? 0 };
     },
 
     /**

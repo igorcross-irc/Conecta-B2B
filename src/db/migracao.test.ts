@@ -31,7 +31,7 @@ beforeAll(async () => {
       select nullif(current_setting('request.jwt.sub', true), '')::uuid $$;
     create role cliente;
   `);
-  for (const arquivo of ["0001_init.sql", "0002_onboarding.sql", "0003_pool_e_buscas.sql", "0004_plataforma.sql", "0005_alvo_e_receita.sql", "0007_limite_e_optout.sql"]) {
+  for (const arquivo of ["0001_init.sql", "0002_onboarding.sql", "0003_pool_e_buscas.sql", "0004_plataforma.sql", "0005_alvo_e_receita.sql", "0007_limite_e_optout.sql", "0008_papel_app.sql"]) {
     await db.exec(readFileSync(join(process.cwd(), "supabase/migrations", arquivo), "utf8"));
   }
   await db.exec(`
@@ -157,5 +157,51 @@ describe("migração 0003", () => {
     await expect(
       db.query(`insert into busca_job (organizacao_id, cnpj, chave) values ('${ORG_A}','33000167000101','dup')`),
     ).rejects.toThrow();
+  });
+});
+
+describe("migração 0008: papel limitado da aplicação", () => {
+  async function comoApp(usuario: string) {
+    await db.exec("reset role");
+    await db.query("select set_config('request.jwt.sub', $1, false)", [usuario]);
+    await db.exec("set role conecta_app");
+  }
+
+  it("não ignora a segurança por linha: sem filtro no código, só vê a própria organização", async () => {
+    await comoApp(USER_A);
+    const r = await db.query<{ organizacao_id: string }>("select organizacao_id from contato");
+    expect(r.rows.map((x) => x.organizacao_id)).toEqual([ORG_A]);
+    expect((await db.query("select * from credito_lancamento")).rows.every((x) => (x as { organizacao_id: string }).organizacao_id === ORG_A)).toBe(true);
+  });
+
+  it("não escreve em outra organização nem altera o que não enxerga", async () => {
+    await comoApp(USER_A);
+    await expect(
+      db.query(`insert into lista (organizacao_id, nome) values ('${ORG_B}', 'invasão')`),
+    ).rejects.toThrow(/row-level security/);
+    const r = await db.query(`update contato set nome = 'x' where id = '${CONTATO_B}' returning id`);
+    expect(r.rows).toHaveLength(0);
+  });
+
+  it("não é dono nem superusuário", async () => {
+    await comoApp(USER_A);
+    await expect(db.exec("create table x (a int)")).rejects.toThrow();
+    await expect(db.exec("alter table contato disable row level security")).rejects.toThrow();
+    const r = await db.query<{ rolbypassrls: boolean; rolsuper: boolean }>(
+      "select rolbypassrls, rolsuper from pg_roles where rolname = 'conecta_app'",
+    );
+    expect(r.rows[0]).toEqual({ rolbypassrls: false, rolsuper: false });
+  });
+
+  it("opt-out atravessa organizações só pela função", async () => {
+    await db.exec("reset role");
+    await db.exec(
+      `insert into contato_dado (contato_id, email) values ('${CONTATO_A}', 'x@acme.com'), ('${CONTATO_B}', 'x@acme.com')
+         on conflict (contato_id) do update set email = excluded.email`,
+    );
+    await comoApp(USER_A);
+    expect((await db.query<{ n: number }>("select aplicar_opt_out(' X@acme.com ') as n")).rows[0].n).toBe(2);
+    await db.exec("reset role");
+    expect((await db.query("select 1 from contato_dado where email is not null")).rows).toHaveLength(0);
   });
 });
