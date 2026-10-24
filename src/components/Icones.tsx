@@ -19,6 +19,7 @@ export const Creditos = base(<><circle cx="12" cy="12" r="9" /><path d="M14.8 9.
 export const Equipe = base(<><circle cx="9" cy="8" r="3.2" /><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" /><path d="M16 5.2a3.2 3.2 0 0 1 0 5.6M17.5 14.8c2.1.6 3.5 2.3 3.5 5.2" /></>);
 export const Config = base(<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></>);
 export const Plataforma = base(<><path d="M12 3 4 6v5c0 4.5 3.2 8.3 8 10 4.8-1.7 8-5.5 8-10V6z" /><path d="m9 12 2 2 4-4" /></>);
+export const Grafico = base(<><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></>);
 export const Menu = base(<><path d="M4 6h16M4 12h16M4 18h16" /></>);
 export const Fechar = base(<><path d="M6 6l12 12M18 6 6 18" /></>);
 export const Filtro = base(<><path d="M3 5h18l-7 8v6l-4-2v-4z" /></>);
@@ -37,5 +38,5 @@ export const Relogio = base(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3
 export const Check = base(<><path d="m5 12.5 4.5 4.5L19 7.5" /></>);
 export const Alerta = base(<><path d="M12 4 2.5 20h19z" /><path d="M12 10v5M12 18h.01" /></>);
 
-export const ICONES = { Busca, Descobrir, Base, Listas, Importar, Creditos, Equipe, Config, Plataforma } as const;
+export const ICONES = { Busca, Descobrir, Base, Listas, Importar, Creditos, Equipe, Config, Plataforma, Grafico } as const;
 export type NomeIcone = keyof typeof ICONES;

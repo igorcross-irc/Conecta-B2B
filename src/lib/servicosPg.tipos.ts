@@ -46,6 +46,22 @@ export interface ItemPesquisa {
   aderencia?: number;
   motivos?: { dimensao: string; ok: boolean }[];
 }
+export interface Fatia { rotulo: string; chave: string; empresas: number }
+/** Visões agregadas das empresas que combinam com os filtros (tamanho de mercado). */
+export interface Mercado {
+  total: number;
+  porSetor: Fatia[];
+  porPorte: Fatia[];
+  porUf: Fatia[];
+  porMunicipio: Fatia[];
+  porIdade: Fatia[];
+  /** Empresas abertas em cada ano (os 10 últimos). */
+  aberturasPorAno: Fatia[];
+  comEmail: number;
+  comTelefone: number;
+  /** Falso se a base da Receita ainda não foi carregada. */
+  baseReceita: boolean;
+}
 export interface ResultadoPesquisa { itens: ItemPesquisa[]; total: number; baseReceita: boolean; sites: string[]; temPerfil?: boolean }
 
 export interface EstadoBusca {
@@ -176,6 +192,7 @@ export interface Cruzados {
   listas(): Promise<ListaPg[]>;
   pesquisar(f?: PesquisaFiltros): Promise<ResultadoPesquisa>;
   perfilIdeal(): Promise<PerfilIdeal>;
+  mercado(f?: PesquisaFiltros): Promise<Mercado | null>;
   registrarOptOut(email: string): Promise<{ contatosAfetados: number }>;
   resolverSite(entrada: string): Promise<{
     dominio: string;
