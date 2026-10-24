@@ -300,3 +300,23 @@ test.describe("segurança e desempenho", () => {
     }
   });
 });
+
+test.describe("roteiro completo no celular @celular", () => {
+  test("pesquisar, abrir a empresa, buscar pessoas, revelar, salvar em lista e rever em Minhas empresas", async ({ page }) => {
+    await page.goto("/pesquisar");
+    await page.getByLabel("Nome da empresa, CNPJ ou site").fill("estrela");
+    await page.getByRole("button", { name: "Buscar", exact: true }).click();
+    await page.getByRole("link", { name: "Abrir empresa" }).first().click();
+    await expect(page).toHaveURL(/\/empresa\/\d{14}/);
+    await page.getByRole("button", { name: /Buscar pessoas/ }).click();
+    await expect(page.getByText(/Pessoas ligadas a/)).toBeInViewport({ timeout: 25000 });
+    await page.getByRole("button", { name: /Revelar e-mail/ }).first().click();
+    await expect(page.getByText(/@exemplo\.com\.br/).first()).toBeVisible();
+    await page.getByLabel("Nome da nova lista").fill("Roteiro celular");
+    await page.getByRole("button", { name: /Salvar as \d+ pessoas em nova lista/ }).click();
+    await expect(page.getByText(/salvas na lista/)).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.getByRole("navigation", { name: "Atalhos" }).getByRole("link", { name: "Empresas" }).click();
+    await expect(page.getByText(/1 e-mail revelado/).first()).toBeVisible();
+  });
+});

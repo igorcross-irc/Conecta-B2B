@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { alvoValido, chaveAlvo } from "./cnpj";
-import { ErroDeNegocio } from "./servicos";
+import { ErroDeNegocio } from "./erros";
 import { Linha, hashToken } from "./servicosPg.tipos";
 import type { Ctx } from "./servicosPg.contexto";
 

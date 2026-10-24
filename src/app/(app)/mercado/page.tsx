@@ -1,17 +1,15 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { consultaPermitida, contexto } from "@/lib/app";
+import { filtrosDaUrl, paraBusca } from "@/lib/consulta";
 import { LimiteDeConsultas } from "@/components/LimiteDeConsultas";
 import { paraParametros } from "@/lib/filtrosUrl";
-import { ABERTURAS, PORTES, SETORES } from "@/lib/setores";
+import { PORTES, SETORES } from "@/lib/setores";
 import { UFS } from "@/lib/ufs";
 import type { Fatia } from "@/lib/servicosPg";
 
 export const metadata = { title: "Mercado" };
 
-const texto = (sp: Record<string, string | string[] | undefined>, k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
-const lista = (sp: Record<string, string | string[] | undefined>, k: string) =>
-  Array.isArray(sp[k]) ? (sp[k] as string[]) : typeof sp[k] === "string" ? [sp[k] as string] : [];
 const num = (n: number) => n.toLocaleString("pt-BR");
 
 const EXEMPLOS = [
@@ -54,14 +52,8 @@ export default async function Mercado({ searchParams }: PageProps<"/mercado">) {
   await connection();
   if (!(await consultaPermitida())) return <LimiteDeConsultas />;
   const sp = await searchParams;
-  const f = {
-    uf: texto(sp, "uf").toUpperCase().slice(0, 2),
-    cidade: texto(sp, "cidade"),
-    segmento: texto(sp, "segmento"),
-    setores: lista(sp, "setor").filter((x) => SETORES.some((t) => t.id === x)),
-    porte: lista(sp, "porte").filter((x) => (PORTES as readonly string[]).includes(x)),
-    abertura: ABERTURAS.some((a) => a.id === sp.abertura) ? (sp.abertura as string) : "",
-  };
+  const url = filtrosDaUrl(paraBusca(sp));
+  const f = { uf: url.uf ?? "", cidade: url.cidade ?? "", segmento: url.segmento ?? "", setores: url.setores ?? [], porte: url.porte ?? [], abertura: url.abertura ?? "" };
   const { servicos } = await contexto();
   const m = await servicos.mercado({ ...f, abertura: f.abertura || undefined });
   const base = paraParametros({ ...f, abertura: f.abertura || undefined });

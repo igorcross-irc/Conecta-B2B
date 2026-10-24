@@ -1,4 +1,4 @@
-import { celulaCsv } from "./servicos";
+import { celulaCsv } from "./contatos";
 
 /** Uma pessoa já revelada (o que não foi revelado nunca chega aqui), com a empresa. */
 export interface LinhaExportacao {

@@ -3,7 +3,7 @@ import { normalizarBusca } from "./cnpj";
 import { UFS } from "./ufs";
 import { limparFiltros, paraParametros, resumoFiltros, type FiltrosUrl } from "./filtrosUrl";
 import { ABERTURAS, PORTES, SETORES, faixasDeSetores } from "./setores";
-import { ErroDeNegocio } from "./servicos";
+import { ErroDeNegocio } from "./erros";
 import { Fatia, Linha, Mercado, PesquisaFiltros, PesquisaSalva, ResultadoPesquisa, ResultadoParecidas, UUID } from "./servicosPg.tipos";
 import type { Ctx } from "./servicosPg.contexto";
 

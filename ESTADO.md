@@ -198,3 +198,12 @@ Críticas encontradas e o que foi feito:
 - **Cabeçalhos de segurança** (CSP enxuta com frame-ancestors, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy, HSTS). `zod` fixado em 4.6.7: `npm audit` zerado.
 - **RLS verificada contra o Neon real** (detalhes em `docs/papel-de-banco.md`); `statement_timeout` de 20 s no papel. Falta só você ligar o papel em produção.
 - Medidas para o plano nacional: matrizes ativas do Brasil = 27,05 mi, das quais 16,66 mi (61,6%) são Empresário Individual (inclui MEI).
+
+## 24/10/2026 (noite, parte 7) — limpeza de duplicações (PR #8, empilhada na #7)
+
+- **Versão antiga dos serviços removida** (`servicos.ts` em memória + `servicos.test.ts`): os cenários já eram cobertos pelos testes de `servicosPg`. O que era compartilhado foi para `src/lib/erros.ts` (`ErroDeNegocio`) e `src/lib/contatos.ts` (máscaras, `visivel`, `celulaCsv`), este com testes novos e duros (nunca expõe e-mail/telefone antes de revelar, CSV seguro).
+- **Um só tradutor de URL para filtros** (`src/lib/consulta.ts`): Pesquisa, Mercado, exportação e API pública agora usam a mesma função (antes eram 4 cópias). Um filtro novo entra em um lugar só.
+- **Um só formatador de CNPJ** (já existia em `cnpj.ts`; 4 telas novas tinham reescrito) e **uma só checagem de segredo dos crons** (`src/lib/cron.ts`).
+- **`Descobrir.tsx` dividido** (609 → 317 linhas) em `AbaResumo`, `AbaSocios`, `ListaPessoas` e `tipos`.
+- `/base/[cnpj]` ficou: não é duplicata, é a edição colaborativa (nota, tags, correções, contato à base). Agora a página da empresa tem o atalho "Notas da comunidade e correções".
+- `buscasRecentes` removido (sem uso desde a unificação). Novo roteiro e2e completo no celular (pesquisar → abrir → buscar pessoas → revelar → lista → Minhas empresas).

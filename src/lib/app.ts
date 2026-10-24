@@ -12,7 +12,7 @@ import { chaveGemini } from "./ia/gemini";
 import { EmpresaDemo, ProvedorDemo } from "./providers/mock";
 import { obterSessao } from "./sessao";
 import { criarServicosPg, type ServicosPg } from "./servicosPg";
-import { ErroDeNegocio } from "./servicos";
+import { ErroDeNegocio } from "./erros";
 import { emailConfigurado, enviarEmail as enviarEmailBruto, urlPublica } from "./email";
 import { log, mensagemDe } from "./log";
 import { medir, monitorarContatos, monitorarEmpresa, type Execucao } from "./monitor";

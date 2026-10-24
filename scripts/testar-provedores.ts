@@ -11,7 +11,7 @@ import { lerCsv, normalizarCabecalho } from "../src/lib/csv";
 import { BrasilApi, EmpresaEmCascata } from "../src/lib/providers/brasilapi";
 import { CnpjaAberta } from "../src/lib/providers/cnpja";
 import { EmpresaDemo, ProvedorDemo } from "../src/lib/providers/mock";
-import { celulaCsv } from "../src/lib/servicos";
+import { celulaCsv } from "../src/lib/contatos";
 import { COLUNAS, executarTeste } from "../src/lib/teste";
 
 async function main() {

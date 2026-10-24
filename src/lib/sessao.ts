@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import type { Banco } from "@/db/conexao";
 import { ORG_DEMO, USUARIO_DEMO } from "@/db/local";
 import { getAuth } from "./auth/server";
-import { ErroDeNegocio } from "./servicos";
+import { ErroDeNegocio } from "./erros";
 
 export type Papel = "administrador" | "membro";
 

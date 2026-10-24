@@ -1,7 +1,8 @@
 import { alvoValido, somenteDigitos } from "./cnpj";
 import { lerCsv, normalizarCabecalho } from "./csv";
 import { montarCsv, type FormatoExportacao, type LinhaExportacao } from "./exportacao";
-import { ErroDeNegocio, visivel, type ContatoVisivel } from "./servicos";
+import { ErroDeNegocio } from "./erros";
+import { visivel, type ContatoVisivel } from "./contatos";
 import { Linha, ListaPg, UUID } from "./servicosPg.tipos";
 import type { Ctx } from "./servicosPg.contexto";
 

@@ -3,7 +3,7 @@ import { abrirBancoLocal, ORG_DEMO, USUARIO_DEMO } from "@/db/local";
 import { pontuar } from "./aderencia";
 import { ProvedorDemo } from "./providers/mock";
 import type { Empresa, ProvedorEmpresa } from "./providers/types";
-import { ErroDeNegocio } from "./servicos";
+import { ErroDeNegocio } from "./erros";
 import { criarServicosPg } from "./servicosPg";
 import { LIMITE_CONTAGEM } from "./servicosPg.pesquisa";
 import type { Db } from "@/db/conexao";
@@ -436,7 +436,6 @@ describe("base colaborativa", () => {
     const { s } = await novo();
     const j = await s.iniciarBusca({ cnpj: "33000167000101", cargos: [], chave: "r" });
     await s.executarBusca(j.id);
-    expect((await s.buscasRecentes())[0]).toMatchObject({ empresa: "EMPRESA DE TESTE SA", status: "concluida" });
   });
 });
 

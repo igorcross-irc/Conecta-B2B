@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { connection } from "next/server";
+import { formatarCnpj } from "@/lib/cnpj";
 import { consultaPermitida, contexto } from "@/lib/app";
 import { LimiteDeConsultas } from "@/components/LimiteDeConsultas";
 import { Predio } from "@/components/Icones";
 
 export const metadata = { title: "Empresas parecidas" };
 
-const fmt = (c: string) => c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
 
 export default async function Parecidas({ searchParams }: PageProps<"/parecidas">) {
   await connection();
@@ -52,7 +52,7 @@ export default async function Parecidas({ searchParams }: PageProps<"/parecidas"
                   </div>
                   <div className="min-w-0 flex-1">
                     <Link href={voltaPara(i.cnpj)} className="block truncate font-semibold text-marca-800 hover:underline">{i.nomeFantasia || i.razaoSocial}</Link>
-                    <p className="truncate text-xs text-slate-500">{i.razaoSocial} · {fmt(i.cnpj)}</p>
+                    <p className="truncate text-xs text-slate-500">{i.razaoSocial} · {formatarCnpj(i.cnpj)}</p>
                     <p className="mt-1 truncate text-sm text-slate-600">{[i.bairro, i.municipio, i.uf].filter(Boolean).join(" · ")}{i.atividade ? ` — ${i.atividade}` : ""}</p>
                     <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
                       {i.iguais.map((x) => <span key={x} className="selo">{x}</span>)}

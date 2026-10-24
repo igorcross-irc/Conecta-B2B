@@ -4,10 +4,12 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { consultaPermitida, contexto } from "@/lib/app";
 import { LimiteDeConsultas } from "@/components/LimiteDeConsultas";
+import { formatarCnpj } from "@/lib/cnpj";
+import { filtrosDaUrl, paraBusca } from "@/lib/consulta";
 import { emailConfigurado } from "@/lib/email";
 import { limparFiltros, paraParametros, resumoFiltros } from "@/lib/filtrosUrl";
 import { chaveGemini } from "@/lib/ia/gemini";
-import { ABERTURAS, PORTES, SETORES } from "@/lib/setores";
+import { ABERTURAS, SETORES } from "@/lib/setores";
 import { Email, Externo, Importar, Predio, Relogio, Salvar, Sparkles, Telefone } from "@/components/Icones";
 import { FORMATOS, ROTULO_FORMATO } from "@/lib/exportacao";
 import { removerPesquisaAcao, salvarPesquisaAcao } from "../acoes";
@@ -32,26 +34,20 @@ const EXEMPLOS: { rotulo: string; q: string }[] = [
 /** Anos completos desde uma data (AAAA-MM-DD). */
 const anosDesde = (d?: string) => (d ? Math.max(0, Math.floor((Date.now() - Date.parse(d)) / 31_557_600_000)) : undefined);
 
-const lista = (sp: Record<string, string | string[] | undefined>, k: string) =>
-  Array.isArray(sp[k]) ? (sp[k] as string[]) : typeof sp[k] === "string" ? [sp[k] as string] : [];
-const texto = (sp: Record<string, string | string[] | undefined>, k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
-
 export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar">) {
   await connection();
   if (!(await consultaPermitida())) return <LimiteDeConsultas />;
   const sp = await searchParams;
+  const q = paraBusca(sp);
+  const base = filtrosDaUrl(q);
   const v: ValoresFiltro = {
-    nome: texto(sp, "nome"), termos: texto(sp, "termos"), segmento: texto(sp, "segmento"),
-    uf: texto(sp, "uf").toUpperCase().slice(0, 2), cidade: texto(sp, "cidade"), bairro: texto(sp, "bairro"),
-    setores: lista(sp, "setor").filter((x) => SETORES.some((t) => t.id === x)),
-    porte: lista(sp, "porte").filter((x) => (PORTES as readonly string[]).includes(x)),
-    abertura: ABERTURAS.some((a) => a.id === sp.abertura) ? (sp.abertura as string) : "",
-    email: sp.email === "1", telefone: sp.telefone === "1", filiais: sp.filiais === "1",
-    ordem: sp.ordem === "recentes" ? "recentes" : sp.ordem === "aderencia" ? "aderencia" : "nome",
+    nome: base.nome ?? "", termos: base.termos ?? "", segmento: base.segmento ?? "", uf: base.uf ?? "", cidade: base.cidade ?? "", bairro: base.bairro ?? "",
+    setores: base.setores ?? [], porte: base.porte ?? [], abertura: base.abertura ?? "",
+    email: Boolean(base.comEmail), telefone: Boolean(base.comTelefone), filiais: Boolean(base.incluirFiliais), ordem: base.ordem ?? "nome",
   };
-  const pagina = Math.max(0, Number(texto(sp, "pagina")) || 0);
-  const erro = texto(sp, "erro");
-  const salva = sp.salva === "1";
+  const pagina = base.pagina;
+  const erro = q.get("erro") ?? "";
+  const salva = q.get("salva") === "1";
 
   const filtros = limparFiltros({
     nome: v.nome, termos: v.termos, segmento: v.segmento, uf: v.uf, cidade: v.cidade, bairro: v.bairro, setores: v.setores, porte: v.porte,
@@ -250,7 +246,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
                         <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-marca-50 text-lg font-semibold text-marca-700 sm:flex" aria-hidden>{nome.charAt(0)}</span>
                         <div className="min-w-0 flex-1">
                           <Link href={empresaHref(i.cnpj)} className="block truncate font-semibold text-marca-800 hover:underline">{nome}</Link>
-                          <p className="truncate text-xs text-slate-500">{i.razaoSocial} · {i.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}</p>
+                          <p className="truncate text-xs text-slate-500">{i.razaoSocial} · {formatarCnpj(i.cnpj)}</p>
                           <p className="mt-1 truncate text-sm text-slate-600">{[i.bairro, i.municipio, i.uf].filter(Boolean).join(" · ")}{i.atividade ? ` — ${i.atividade}` : ""}</p>
                           <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
                             {i.aderencia !== undefined && (

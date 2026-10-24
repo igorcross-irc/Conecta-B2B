@@ -1,6 +1,6 @@
+import { filtrosDaUrl } from "@/lib/consulta";
 import { contexto, responderErro } from "@/lib/app";
 import { formatoValido, montarCsvEmpresas } from "@/lib/exportacao";
-import { ABERTURAS, PORTES, SETORES } from "@/lib/setores";
 
 export const maxDuration = 60;
 
@@ -18,16 +18,8 @@ export async function GET(req: Request) {
       return Response.json({ erro: "Muitas exportações. Tente novamente mais tarde." }, { status: 429 });
     }
     const formato = formatoValido(q.get("formato"));
-    const t = (k: string) => q.get(k) ?? undefined;
-    const r = await servicos.pesquisar({
-      nome: t("nome"), termos: t("termos"), uf: t("uf"), cidade: t("cidade"), bairro: t("bairro"), segmento: t("segmento"),
-      setores: q.getAll("setor").filter((x) => SETORES.some((s) => s.id === x)),
-      porte: q.getAll("porte").filter((x) => (PORTES as readonly string[]).includes(x)),
-      abertura: ABERTURAS.some((a) => a.id === q.get("abertura")) ? q.get("abertura")! : undefined,
-      comEmail: q.get("email") === "1", comTelefone: q.get("telefone") === "1", incluirFiliais: q.get("filiais") === "1",
-      ordem: q.get("ordem") === "recentes" ? "recentes" : "nome",
-      pagina: Number(q.get("pagina") ?? 0) || 0, porPagina: LIMITE, completo: true,
-    });
+    const f = filtrosDaUrl(q);
+    const r = await servicos.pesquisar({ ...f, porPagina: LIMITE, completo: true });
     if (r.itens.length === 0) return Response.json({ erro: "Nenhuma empresa para exportar com esses filtros." }, { status: 404 });
     const csv = montarCsvEmpresas(
       formato,

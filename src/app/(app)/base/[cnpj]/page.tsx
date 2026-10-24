@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { contexto } from "@/lib/app";
 import { formatarCnpj } from "@/lib/cnpj";
-import { ErroDeNegocio } from "@/lib/servicos";
+import { ErroDeNegocio } from "@/lib/erros";
 import { FormEmpresa, FormContato } from "./Formularios";
 
 export default async function Ficha({ params }: PageProps<"/base/[cnpj]">) {

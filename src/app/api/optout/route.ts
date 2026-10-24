@@ -1,6 +1,6 @@
 import { pedirOptOutPublico, permitirPedidoPublico, responderErro } from "@/lib/app";
 import { ipDoPedido } from "@/lib/ip";
-import { ErroDeNegocio } from "@/lib/servicos";
+import { ErroDeNegocio } from "@/lib/erros";
 
 /**
  * POST /api/optout  { email }

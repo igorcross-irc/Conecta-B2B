@@ -2,7 +2,7 @@ import { alvoValido, chaveAlvo } from "./cnpj";
 import { enriquecer as enriquecerEmpresa, type Enriquecimento } from "./enriquecimento";
 import { dominioSeguro } from "./providers/site";
 import { type Empresa, VERSAO_EMPRESA } from "./providers/types";
-import { ErroDeNegocio } from "./servicos";
+import { ErroDeNegocio } from "./erros";
 import { UUID } from "./servicosPg.tipos";
 import type { Ctx } from "./servicosPg.contexto";
 

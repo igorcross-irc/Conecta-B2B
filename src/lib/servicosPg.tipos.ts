@@ -5,7 +5,8 @@ import type { Registrador } from "./monitor";
 import type { Contato, Empresa, ProvedorContatos, ProvedorEmpresa } from "./providers/types";
 import type { PerfilIdeal } from "./aderencia";
 import type { FiltrosUrl } from "./filtrosUrl";
-import { ErroDeNegocio, type ContatoGuardado, type ContatoVisivel } from "./servicos";
+import { ErroDeNegocio } from "./erros";
+import { type ContatoGuardado, type ContatoVisivel } from "./contatos";
 
 export interface PesquisaFiltros {
   nome?: string; termos?: string; uf?: string; cidade?: string; bairro?: string; segmento?: string;

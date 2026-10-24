@@ -1,5 +1,6 @@
 import { alvoValido, chaveAlvo, normalizarBusca } from "./cnpj";
-import { ErroDeNegocio, visivel } from "./servicos";
+import { ErroDeNegocio } from "./erros";
+import { visivel } from "./contatos";
 import { EmpresaTrabalhada, EstadoBusca, Linha, UUID, VALIDADE_SQL, traduzir } from "./servicosPg.tipos";
 import type { Ctx } from "./servicosPg.contexto";
 
@@ -136,22 +137,6 @@ export function criarBuscas(c: Ctx) {
         [org, chaveAlvo(cnpj)],
       );
       return j ? estadoDoJob(j) : null;
-    },
-    /** Buscas recentes da organização (para retomar o trabalho). */
-    async buscasRecentes(limite = 12) {
-      const r = await db.query<Linha>(
-        `select j.id, j.cnpj, j.status, j.criado_em, j.etapa, e.dados->>'razaoSocial' as nome
-           from busca_job j left join empresa_cache e on e.cnpj = j.cnpj
-          where j.organizacao_id = $1 order by j.criado_em desc limit $2`,
-        [org, limite],
-      );
-      return r.rows.map((x) => ({
-        id: x.id as string,
-        cnpj: x.cnpj as string,
-        empresa: (x.nome as string) ?? (x.cnpj as string),
-        status: x.status as string,
-        quando: new Date(x.criado_em as string).toISOString(),
-      }));
     },
     /**
      * Empresas em que a organização já trabalhou, consolidadas: pessoas colhidas, dados revelados, listas e buscas,

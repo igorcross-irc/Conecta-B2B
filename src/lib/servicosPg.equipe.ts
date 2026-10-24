@@ -1,4 +1,4 @@
-import { ErroDeNegocio } from "./servicos";
+import { ErroDeNegocio } from "./erros";
 import { ConvitePendente, Linha, Membro, UUID, traduzir } from "./servicosPg.tipos";
 import type { Ctx } from "./servicosPg.contexto";
 
