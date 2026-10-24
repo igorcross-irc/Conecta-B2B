@@ -11,6 +11,7 @@ import { EmpresaDemo, ProvedorDemo } from "./providers/mock";
 import { obterSessao } from "./sessao";
 import { criarServicosPg, type ServicosPg } from "./servicosPg";
 import { ErroDeNegocio } from "./servicos";
+import { emailConfigurado, enviarEmail, urlPublica } from "./email";
 
 /**
  * Banco e provedores são únicos no processo; os serviços são criados a cada requisição,
@@ -72,6 +73,44 @@ const ZERO = "00000000-0000-0000-0000-000000000000";
 export async function registrarOptOutPublico(email: string) {
   const banco = await banco$();
   return criarServicosPg({ db: banco.comUsuario(ZERO), org: ZERO, ...provedores() }).registrarOptOut(email);
+}
+
+function servicosPublicos() {
+  return banco$().then((banco) => criarServicosPg({ db: banco.comUsuario(ZERO), org: ZERO, ...provedores() }));
+}
+
+/** Limite de pedidos para rotas públicas, contado no banco (vale em todos os servidores). */
+export async function permitirPedidoPublico(chave: string, maximo: number, janelaSegundos: number) {
+  return (await servicosPublicos()).permitirPedido(chave, maximo, janelaSegundos);
+}
+
+/**
+ * Pedido público de opt-out. Com envio de e-mail configurado, só cria o pedido e manda o link de confirmação
+ * (o apagamento acontece quando o dono do e-mail confirma). Sem envio configurado, aplica na hora.
+ * A resposta é sempre a mesma, para não revelar se o e-mail está em nossa base.
+ */
+export async function pedirOptOutPublico(email: string): Promise<{ confirmacaoPorEmail: boolean }> {
+  const s = await servicosPublicos();
+  if (!emailConfigurado()) {
+    await s.registrarOptOut(email);
+    return { confirmacaoPorEmail: false };
+  }
+  const token = await s.pedirOptOut(email);
+  if (token) {
+    await enviarEmail({
+      para: email.trim().toLowerCase(),
+      assunto: "Confirme seu pedido para não ser contatado",
+      texto:
+        "Recebemos um pedido para apagar seus dados de contato e não listar mais o seu e-mail nas buscas do Conecta B2B.\n\n" +
+        `Para confirmar, abra: ${urlPublica()}/optout/confirmar?token=${token}\n\n` +
+        "O link vale por 2 horas. Se não foi você, ignore esta mensagem: nada será apagado.",
+    });
+  }
+  return { confirmacaoPorEmail: true };
+}
+
+export async function confirmarOptOutPublico(token: string) {
+  return (await servicosPublicos()).confirmarOptOut(token);
 }
 
 /** Converte erros de negócio em resposta JSON com o status certo. */

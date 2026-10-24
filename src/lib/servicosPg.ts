@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import type { Db } from "@/db/conexao";
 import { buscarEmCascata, type Tentativa } from "./cascade";
 import { TABELA_CUSTOS_PADRAO, type Lancamento, type TabelaCustos } from "./credits";
@@ -105,6 +106,8 @@ interface Dependencias {
 }
 
 type Linha = Record<string, unknown>;
+
+const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -1167,6 +1170,51 @@ export function criarServicosPg({
       );
       await db.query("delete from base_contato where lower(email) = $1", [e]);
       return { contatosAfetados: r.rows.length };
+    },
+
+    /**
+     * Cria um pedido de opt-out a ser confirmado pelo link enviado ao e-mail. Devolve o token (só vai para o
+     * e-mail, o banco guarda o hash) ou null quando já há pedidos demais para esse e-mail na última hora.
+     */
+    async pedirOptOut(email: string): Promise<string | null> {
+      const e = email.trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new ErroDeNegocio("E-mail inválido.");
+      const recentes = await um<{ n: number }>(
+        "select count(*)::int as n from optout_pedido where email = $1 and criado_em > now() - interval '1 hour'",
+        [e],
+      );
+      if ((recentes?.n ?? 0) >= 3) return null;
+      const token = randomBytes(32).toString("hex");
+      await db.query("insert into optout_pedido (token_hash, email) values ($1, $2)", [hashToken(token), e]);
+      return token;
+    },
+
+    /** Confirma um pedido de opt-out pelo token do e-mail e aplica o apagamento. Cada token vale uma vez. */
+    async confirmarOptOut(token: string): Promise<{ contatosAfetados: number }> {
+      if (!/^[0-9a-f]{64}$/.test(token)) throw new ErroDeNegocio("Link inválido ou expirado.", 400);
+      const p = await um<{ email: string }>(
+        `update optout_pedido set usado_em = now()
+          where token_hash = $1 and usado_em is null and expira_em > now() returning email`,
+        [hashToken(token)],
+      );
+      if (!p) throw new ErroDeNegocio("Link inválido ou expirado.", 400);
+      return servicos.registrarOptOut(p.email);
+    },
+
+    /**
+     * Limite de pedidos por chave (ex.: IP), contado no banco para valer em todos os servidores.
+     * Devolve true se o pedido pode seguir (e já o conta).
+     */
+    async permitirPedido(chave: string, maximo: number, janelaSegundos: number): Promise<boolean> {
+      const r = await um<{ n: number }>(
+        "select count(*)::int as n from limite_pedido where chave = $1 and criado_em > now() - make_interval(secs => $2)",
+        [chave, janelaSegundos],
+      );
+      if ((r?.n ?? 0) >= maximo) return false;
+      await db.query("insert into limite_pedido (chave) values ($1)", [chave]);
+      // Limpeza ocasional, para a tabela não crescer.
+      if (Math.random() < 0.02) await db.query("delete from limite_pedido where criado_em < now() - interval '1 day'");
+      return true;
     },
 
     /**

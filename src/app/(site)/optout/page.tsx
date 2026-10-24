@@ -18,7 +18,11 @@ export default function OptOut() {
     });
     const dados = await r.json();
     if (!r.ok) setErro(dados.erro ?? "Erro inesperado.");
-    else setMsg("Pedido registrado. Seu e-mail e telefone foram apagados e você não aparecerá mais nas buscas.");
+    else if (dados.confirmacaoPorEmail) {
+      setMsg("Enviamos um link de confirmação para esse e-mail (vale por 2 horas). Abra o link para concluir; nada é apagado antes disso.");
+    } else {
+      setMsg("Pedido registrado. Seu e-mail e telefone foram apagados e você não aparecerá mais nas buscas.");
+    }
   }
 
   return (

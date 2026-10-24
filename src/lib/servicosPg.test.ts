@@ -512,3 +512,44 @@ describe("pesquisa avançada: setor, porte, abertura e contato", () => {
     expect(e.telefones).toContain("(21) 33334444");
   });
 });
+
+describe("opt-out com confirmação e limite de pedidos", () => {
+  it("só apaga depois do token do e-mail, que vale uma vez", async () => {
+    const { db, s } = await novo();
+    const r = await busca(s, [], "k-opt");
+    const contato = r.contatos[0];
+    await s.revelar({ contatoId: contato.id, campo: "email" });
+    const email = (await db.query<{ email: string }>("select email from contato_dado where email is not null limit 1")).rows[0].email;
+
+    const token = await s.pedirOptOut(email);
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    // Antes de confirmar nada foi apagado, e o banco só guarda o hash.
+    expect((await db.query("select 1 from opt_out where email = $1", [email.toLowerCase()])).rows).toHaveLength(0);
+    expect((await db.query("select token_hash from optout_pedido")).rows[0]).not.toEqual({ token_hash: token });
+
+    expect((await s.confirmarOptOut(token!)).contatosAfetados).toBeGreaterThan(0);
+    expect((await db.query("select 1 from opt_out where email = $1", [email.toLowerCase()])).rows).toHaveLength(1);
+    await expect(s.confirmarOptOut(token!)).rejects.toThrow(/inválido ou expirado/);
+  });
+
+  it("recusa token inválido, expirado e excesso de pedidos por e-mail", async () => {
+    const { db, s } = await novo();
+    await expect(s.confirmarOptOut("nope")).rejects.toThrow(/inválido/);
+    const t = (await s.pedirOptOut("pessoa@empresa.com.br"))!;
+    await db.query("update optout_pedido set expira_em = now() - interval '1 minute'");
+    await expect(s.confirmarOptOut(t)).rejects.toThrow(/expirado/);
+    await s.pedirOptOut("pessoa@empresa.com.br");
+    await s.pedirOptOut("pessoa@empresa.com.br");
+    expect(await s.pedirOptOut("pessoa@empresa.com.br")).toBeNull();
+  });
+
+  it("limite por chave conta no banco e libera depois da janela", async () => {
+    const { db, s } = await novo();
+    expect(await s.permitirPedido("ip:1", 2, 3600)).toBe(true);
+    expect(await s.permitirPedido("ip:1", 2, 3600)).toBe(true);
+    expect(await s.permitirPedido("ip:1", 2, 3600)).toBe(false);
+    expect(await s.permitirPedido("ip:2", 2, 3600)).toBe(true);
+    await db.query("update limite_pedido set criado_em = now() - interval '2 hours'");
+    expect(await s.permitirPedido("ip:1", 2, 3600)).toBe(true);
+  });
+});
