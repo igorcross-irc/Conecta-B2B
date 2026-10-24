@@ -137,8 +137,13 @@ export class EmpresaEmCascata implements ProvedorEmpresa {
           if (!base.socios.length || base.socios.every((s) => mascarados(s.nome))) base.socios = e.socios;
           base.dominio ??= e.dominio;
           if (!base.telefones.length) base.telefones = e.telefones;
+          if (!base.emailsCadastrais.length) base.emailsCadastrais = e.emailsCadastrais;
+          base.simples ??= e.simples;
+          base.mei ??= e.mei;
+          base.nomeFantasia ??= e.nomeFantasia;
         }
-        if (base.socios.length && !base.socios.every((s) => s.nome.includes("[MASKED]"))) break;
+        // Só para quando já tem sócios reais E o domínio (sem ele a fonte de site não funciona); senão tenta a próxima.
+        if (base.dominio && base.socios.length && !base.socios.every((s) => s.nome.includes("[MASKED]"))) break;
       } catch (err) {
         ultimoErro = err;
       }
