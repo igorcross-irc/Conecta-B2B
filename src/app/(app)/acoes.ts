@@ -12,6 +12,8 @@ export interface Resultado {
   erro?: string;
   ok?: string;
   link?: string;
+  /** Chave de API recém-criada: aparece uma única vez. */
+  chave?: string;
 }
 
 async function executar(fn: () => Promise<Resultado | void>, rev?: string): Promise<Resultado> {
@@ -129,4 +131,38 @@ export async function testarIA(prompt: string): Promise<import("@/lib/ia/gemini"
   if (!sessao.operadora) return { ok: false, chave: false, erro: "Acesso restrito à operadora." };
   const { testarGemini } = await import("@/lib/ia/gemini");
   return testarGemini(prompt.slice(0, 500));
+}
+
+export async function salvarPesquisaAcao(d: FormData) {
+  const volta = `/pesquisar?${texto(d, "volta")}`;
+  const r = await executar(async () => {
+    let filtros: unknown = {};
+    try {
+      filtros = JSON.parse(texto(d, "filtros"));
+    } catch {
+      throw new ErroDeNegocio("Filtros inválidos.");
+    }
+    await (await contexto()).servicos.salvarPesquisa(texto(d, "nome"), filtros as never, d.get("avisar") === "1");
+  });
+  redirect(r.erro ? `${volta}&erro=${encodeURIComponent(r.erro)}` : `${volta}&salva=1`);
+}
+
+export async function removerPesquisaAcao(d: FormData) {
+  await executar(async () => {
+    await (await contexto()).servicos.removerPesquisa(texto(d, "id"));
+  });
+  redirect(`/pesquisar?${texto(d, "volta")}`);
+}
+
+export async function criarChaveApiAcao(_: Resultado, d: FormData): Promise<Resultado> {
+  return executar(async () => {
+    const chave = await (await contexto()).servicos.criarChaveApi(texto(d, "nome"));
+    return { ok: "Chave criada. Copie agora: ela não será mostrada de novo.", chave };
+  }, "/configuracoes");
+}
+
+export async function revogarChaveApiAcao(d: FormData) {
+  await executar(async () => {
+    await (await contexto()).servicos.revogarChaveApi(texto(d, "id"));
+  }, "/configuracoes");
 }

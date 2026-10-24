@@ -1,6 +1,8 @@
 import { connection } from "next/server";
 import { contexto } from "@/lib/app";
 import { FormNome } from "./FormNome";
+import { FormChaveApi } from "./FormChaveApi";
+import { revogarChaveApiAcao } from "../acoes";
 
 export const metadata = { title: "Configurações" };
 
@@ -12,6 +14,9 @@ const ROTULO_ACAO: Record<string, string> = {
   "equipe.remover": "Removeu membro",
   "base.empresa": "Atualizou empresa na base",
   "base.contato": "Adicionou contato à base",
+  "api.criar_chave": "Criou chave de API",
+  "api.revogar_chave": "Revogou chave de API",
+  "pesquisa.salvar": "Salvou pesquisa",
   "admin.recarga": "Recarga de créditos (operadora)",
   "admin.custos": "Custos alterados (operadora)",
 };
@@ -21,6 +26,7 @@ export default async function Configuracoes() {
   const { sessao, servicos } = await contexto();
   const org = await servicos.organizacao();
   const admin = sessao.papel === "administrador";
+  const chaves = admin ? await servicos.chavesApi() : [];
   const auditoria = admin ? await servicos.auditoriaRecente(40) : [];
   return (
     <div className="space-y-6">
@@ -45,6 +51,39 @@ export default async function Configuracoes() {
           <li>Revelar telefone: {org.custos.revelar_telefone} crédito(s)</li>
         </ul>
       </section>
+
+      {admin && (
+        <section className="cartao space-y-3 text-sm">
+          <h2 className="font-medium">Chaves de API</h2>
+          <p className="text-slate-600">
+            Acesso somente leitura e sem custo (ficha da empresa, pesquisa e saldo) para integrar com outros sistemas.
+            Veja os endereços em <code>docs/api.md</code>.
+          </p>
+          <FormChaveApi />
+          {chaves.length > 0 && (
+            <ul className="divide-y divide-slate-100">
+              {chaves.map((k) => (
+                <li key={k.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <span>
+                    <span className="font-medium">{k.nome}</span> <code className="text-xs text-slate-500">{k.prefixo}…</code>
+                    <span className="block text-xs text-slate-500">
+                      criada em {new Date(k.criadaEm).toLocaleDateString("pt-BR")}
+                      {k.ultimoUso ? ` · último uso ${new Date(k.ultimoUso).toLocaleString("pt-BR")}` : " · nunca usada"}
+                      {k.revogada ? " · revogada" : ""}
+                    </span>
+                  </span>
+                  {!k.revogada && (
+                    <form action={revogarChaveApiAcao}>
+                      <input type="hidden" name="id" value={k.id} />
+                      <button className="text-xs text-slate-500 underline">Revogar</button>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {admin && (
         <section className="cartao p-0">

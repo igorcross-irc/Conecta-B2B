@@ -3,16 +3,21 @@
  * lendo o espelho público em Parquet do "CNPJ Aberto" no Hugging Face (mesmo conteúdo dos arquivos da Receita).
  *
  * Uso:  DATABASE_URL=postgres://... npx tsx scripts/importar-receita.ts --ufs=RJ,SP [--mes=2026-10] [--filiais] [--fonte=<pasta ou URL>]
+ *       ... --ufs=SP --busca="padaria estrela"     só empresas de SP com essas palavras no nome (recorte pequeno)
+ *       ... --raizes=33000167,12345678 --filiais   todos os estabelecimentos destes CNPJs-raiz, em qualquer UF
  *
- * Só carrega as UFs pedidas, apenas ativas e, por padrão, só matrizes. Reexecutar é seguro (upsert).
+ * Só carrega o recorte pedido, apenas ativas e, por padrão, só matrizes. Reexecutar é seguro (upsert).
+ * Sem --ufs: RJ, a não ser que use --busca ou --raizes (aí vale todas as UFs).
  * Se o mês pedido não existir no espelho, tenta o mês anterior.
  */
 import { Client } from "pg";
 import { abrir, lerCnaes, linhas, preparar } from "../src/lib/receita/parquet";
 import { normalizarBusca } from "../src/lib/cnpj";
 
-const arg = (n: string) => process.argv.find((a) => a.startsWith(`--${n}=`))?.split("=")[1];
-const ufs = (arg("ufs") ?? "RJ").toUpperCase().split(",").map((s) => s.trim()).filter(Boolean);
+const arg = (n: string) => process.argv.find((a) => a.startsWith(`--${n}=`))?.split("=").slice(1).join("=");
+const busca = arg("busca");
+const raizes = arg("raizes")?.split(",").map((s) => s.trim()).filter(Boolean);
+const ufs = (arg("ufs") ?? (busca || raizes ? "" : "RJ")).toUpperCase().split(",").map((s) => s.trim()).filter(Boolean);
 const filiais = process.argv.includes("--filiais");
 
 function mesesCandidatos(): string[] {
@@ -36,8 +41,8 @@ async function main() {
   let ultimoErro: unknown;
   for (const f of fontes) {
     try {
-      console.log(`Fonte: ${f} · UFs: ${ufs.join(",")} · ${filiais ? "matrizes e filiais" : "só matrizes"}`);
-      total = await preparar(c, { fonte: f, ufs, filiais, log });
+      console.log(`Fonte: ${f} · UFs: ${ufs.join(",") || "todas"} · ${filiais ? "matrizes e filiais" : "só matrizes"}`);
+      total = await preparar(c, { fonte: f, ufs, filiais, busca, raizes, log });
       fonte = f;
       break;
     } catch (e) {
@@ -75,6 +80,13 @@ async function main() {
     if (feitos % 20000 < 2000) log(`Gravados ${feitos}/${total}`);
   }
   log(`Concluído: ${feitos} estabelecimentos.`);
+  // Atualiza a lista de municípios usada nas sugestões da pesquisa (precisa da migração 0012).
+  try {
+    const m = await db.query("select atualizar_municipios() as n");
+    log(`Municípios atualizados: ${m.rows[0].n}.`);
+  } catch (e) {
+    log(`Não atualizei os municípios (aplique db/neon/0012_municipios.sql): ${(e as Error).message}`);
+  }
   await db.end();
 }
 

@@ -47,7 +47,7 @@ export interface Empresa {
 
 export const VERSAO_EMPRESA = 2;
 
-export type StatusEmail = "verificado" | "nao_verificado" | "inferido";
+export type StatusEmail = "verificado" | "nao_verificado" | "inferido" | "dominio_ok";
 
 export interface Contato {
   nome: string;

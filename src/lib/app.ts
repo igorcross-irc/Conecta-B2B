@@ -1,9 +1,10 @@
 import { cache } from "react";
 import { abrirBanco, type Banco } from "@/db/conexao";
-import { BrasilApi, EmpresaEmCascata } from "./providers/brasilapi";
+import { BrasilApi, EmpresaEmCascata, minhaReceita } from "./providers/brasilapi";
 import { CnpjaAberta } from "./providers/cnpja";
 import { SiteEmpresa } from "./providers/site";
 import { SociosReceita } from "./providers/socios";
+import { CvmRelacoesInvestidores } from "./providers/cvmri";
 import { Hunter } from "./providers/hunter";
 import { BuscaWebPessoas } from "./providers/buscaweb";
 import { chaveGemini } from "./ia/gemini";
@@ -11,6 +12,7 @@ import { EmpresaDemo, ProvedorDemo } from "./providers/mock";
 import { obterSessao } from "./sessao";
 import { criarServicosPg, type ServicosPg } from "./servicosPg";
 import { ErroDeNegocio } from "./servicos";
+import { emailConfigurado, enviarEmail, urlPublica } from "./email";
 
 /**
  * Banco e provedores são únicos no processo; os serviços são criados a cada requisição,
@@ -28,13 +30,16 @@ const banco$ = () => (g.__conectaBanco ??= abrirBanco());
  */
 function provedores() {
   if (process.env.CONECTA_MODO_DEMO === "1") {
+    // Dados fictícios em produção seriam cobrados e entregues como se fossem reais: recusa.
+    if (process.env.VERCEL_ENV === "production") throw new ErroDeNegocio("CONECTA_MODO_DEMO não pode ficar ligado em produção.", 500);
     return { empresa: new EmpresaDemo(), contatos: [new ProvedorDemo()] };
   }
   const site = new SiteEmpresa();
   return {
-    empresa: new EmpresaEmCascata([new BrasilApi(), new CnpjaAberta()]),
+    empresa: new EmpresaEmCascata([new BrasilApi(), minhaReceita(), new CnpjaAberta()]),
     contatos: [
       new SociosReceita(),
+      new CvmRelacoesInvestidores(),
       site,
       // Fontes extras entram quando a chave existe no ambiente (Vercel → Settings → Environment Variables).
       ...(process.env.HUNTER_API_KEY ? [new Hunter(process.env.HUNTER_API_KEY)] : []),
@@ -72,6 +77,72 @@ const ZERO = "00000000-0000-0000-0000-000000000000";
 export async function registrarOptOutPublico(email: string) {
   const banco = await banco$();
   return criarServicosPg({ db: banco.comUsuario(ZERO), org: ZERO, ...provedores() }).registrarOptOut(email);
+}
+
+function servicosPublicos() {
+  return banco$().then((banco) => criarServicosPg({ db: banco.comUsuario(ZERO), org: ZERO, ...provedores() }));
+}
+
+/** Limite de pedidos para rotas públicas, contado no banco (vale em todos os servidores). */
+export async function permitirPedidoPublico(chave: string, maximo: number, janelaSegundos: number) {
+  return (await servicosPublicos()).permitirPedido(chave, maximo, janelaSegundos);
+}
+
+/**
+ * Pedido público de opt-out. Com envio de e-mail configurado, só cria o pedido e manda o link de confirmação
+ * (o apagamento acontece quando o dono do e-mail confirma). Sem envio configurado, aplica na hora.
+ * A resposta é sempre a mesma, para não revelar se o e-mail está em nossa base.
+ */
+export async function pedirOptOutPublico(email: string): Promise<{ confirmacaoPorEmail: boolean }> {
+  const s = await servicosPublicos();
+  if (!emailConfigurado()) {
+    await s.registrarOptOut(email);
+    return { confirmacaoPorEmail: false };
+  }
+  const token = await s.pedirOptOut(email);
+  if (token) {
+    await enviarEmail({
+      para: email.trim().toLowerCase(),
+      assunto: "Confirme seu pedido para não ser contatado",
+      texto:
+        "Recebemos um pedido para apagar seus dados de contato e não listar mais o seu e-mail nas buscas do Conecta B2B.\n\n" +
+        `Para confirmar, abra: ${urlPublica()}/optout/confirmar?token=${token}\n\n` +
+        "O link vale por 2 horas. Se não foi você, ignore esta mensagem: nada será apagado.",
+    });
+  }
+  return { confirmacaoPorEmail: true };
+}
+
+/**
+ * Serviços de uma requisição da API pública (chave no cabeçalho Authorization: Bearer cb2b_...).
+ * Devolve uma Response de erro pronta quando a chave falta, é inválida ou passou do limite de 600 pedidos por hora.
+ */
+export async function servicosPorChave(req: Request): Promise<{ servicos: ServicosPg } | { erro: Response }> {
+  const m = (req.headers.get("authorization") ?? "").match(/^Bearer (cb2b_[0-9a-f]{48})$/);
+  if (!m) return { erro: Response.json({ erro: "Envie a chave em Authorization: Bearer cb2b_..." }, { status: 401 }) };
+  const banco = await banco$();
+  const publico = criarServicosPg({ db: banco.comUsuario(ZERO), org: ZERO, ...provedores() });
+  const dono = await publico.validarChaveApi(m[1]);
+  if (!dono) return { erro: Response.json({ erro: "Chave inválida ou revogada." }, { status: 401 }) };
+  const servicos = criarServicosPg({
+    db: banco.comUsuario(dono.usuarioId),
+    org: dono.orgId,
+    ator: { usuarioId: dono.usuarioId, papel: "administrador", operadora: false },
+    ...provedores(),
+  });
+  if (!(await servicos.permitirPedido(`api:${dono.orgId}`, 600, 3600))) {
+    return { erro: Response.json({ erro: "Limite de 600 pedidos por hora atingido." }, { status: 429 }) };
+  }
+  return { servicos };
+}
+
+/** Avisos diários das pesquisas salvas (chamado pelo cron). */
+export async function rodarAlertasPublico() {
+  return (await servicosPublicos()).rodarAlertas(enviarEmail, urlPublica());
+}
+
+export async function confirmarOptOutPublico(token: string) {
+  return (await servicosPublicos()).confirmarOptOut(token);
 }
 
 /** Converte erros de negócio em resposta JSON com o status certo. */

@@ -1,9 +1,27 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { abrirBancoLocal, USUARIO_DEMO } from "@/db/local";
+import { abrirBancoLocal, ORG_DEMO, USUARIO_DEMO } from "@/db/local";
 import { ProvedorDemo } from "./providers/mock";
 import type { Empresa, ProvedorEmpresa } from "./providers/types";
 import { ErroDeNegocio } from "./servicos";
 import { criarServicosPg } from "./servicosPg";
+import type { Db } from "@/db/conexao";
+import type { PGlite } from "@electric-sql/pglite";
+
+/**
+ * Com CONECTA_TESTE_PAPEL=1 os serviços rodam como o papel limitado conecta_app (migração 0008), sem ignorar a
+ * segurança por linha, e como o usuário de demonstração, igual à produção. Setup e conferências seguem como dono.
+ */
+function papel(db: PGlite, usuario: string = USUARIO_DEMO): Db {
+  if (process.env.CONECTA_TESTE_PAPEL !== "1") return db as unknown as Db;
+  return {
+    query: <T,>(sql: string, params: unknown[] = []) =>
+      db.transaction(async (tx) => {
+        await tx.query("select set_config('request.jwt.sub', $1, true)", [usuario]);
+        await tx.exec("set local role conecta_app");
+        return { rows: (await tx.query<T>(sql, params)).rows };
+      }),
+  };
+}
 
 const empresa: Empresa = {
   cnpj: "33000167000101",
@@ -20,7 +38,7 @@ const provedorEmpresa: ProvedorEmpresa = { nome: "teste", buscarPorCnpj: async (
 
 async function novo(saldo = 20) {
   const db = await abrirBancoLocal("memory://", saldo);
-  return { db, s: criarServicosPg({ db, empresa: provedorEmpresa, contatos: [new ProvedorDemo()] }) };
+  return { db, s: criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [new ProvedorDemo()] }) };
 }
 const busca = (s: Awaited<ReturnType<typeof novo>>["s"], cargos: string[], chave: string) =>
   s.buscarDecisores({ cnpj: "33000167000101", cargos, chave });
@@ -97,7 +115,7 @@ describe("serviços em Postgres local", () => {
     const outra = "00000000-0000-0000-0000-0000000000e0";
     await ctx.db.query("insert into organizacao (id, nome) values ($1, 'Outra')", [outra]);
     await ctx.db.query("insert into credito_lancamento (organizacao_id, operacao, valor, saldo_apos, descricao) values ($1,'recarga',10,10,'x')", [outra]);
-    const intruso = criarServicosPg({ db: ctx.db, empresa: provedorEmpresa, contatos: [new ProvedorDemo()], org: outra });
+    const intruso = criarServicosPg({ db: papel(ctx.db), empresa: provedorEmpresa, contatos: [new ProvedorDemo()], org: outra });
     await expect(busca(intruso, [], "i1")).rejects.toMatchObject({ status: 403 });
     expect(await intruso.saldo()).toBe(10);
   });
@@ -147,11 +165,11 @@ describe("serviços em Postgres local", () => {
     const dir = mkdtempSync(join(tmpdir(), "conecta-"));
     try {
       const db1 = await abrirBancoLocal(dir);
-      const s1 = criarServicosPg({ db: db1, empresa: provedorEmpresa, contatos: [new ProvedorDemo()] });
+      const s1 = criarServicosPg({ db: papel(db1), empresa: provedorEmpresa, contatos: [new ProvedorDemo()] });
       await busca(s1, [], "p1");
       await db1.close();
       const db2 = await abrirBancoLocal(dir);
-      const s2 = criarServicosPg({ db: db2, empresa: provedorEmpresa, contatos: [new ProvedorDemo()] });
+      const s2 = criarServicosPg({ db: papel(db2), empresa: provedorEmpresa, contatos: [new ProvedorDemo()] });
       expect(await s2.saldo()).toBe(19);
       await db2.close();
     } finally {
@@ -167,7 +185,7 @@ describe("pool compartilhado e busca em segundo plano", () => {
     let chamadas = 0;
     const contador = { nome: "contador", buscar: async () => { chamadas++; return new ProvedorDemo().buscar({ empresa, cargos: [] }); } };
     const db = await abrirBancoLocal("memory://", 20);
-    const s = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [contador] });
+    const s = criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [contador] });
     expect(await s.disponiveisNoPool("33000167000101")).toBe(0);
     await s.buscarDecisores({ cnpj: "33000167000101", cargos: [], chave: "a" });
     expect(chamadas).toBe(1);
@@ -181,7 +199,7 @@ describe("pool compartilhado e busca em segundo plano", () => {
       "insert into credito_lancamento (organizacao_id, operacao, valor, saldo_apos, descricao) values ($1,'recarga',5,5,'x')",
       [OUTRA_ORG],
     );
-    const s2 = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [contador], org: OUTRA_ORG });
+    const s2 = criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [contador], org: OUTRA_ORG });
     const r = await s2.buscarDecisores({ cnpj: "33000167000101", cargos: [], chave: "b" });
     expect(chamadas).toBe(1);
     expect(r.contatos).toHaveLength(3);
@@ -192,11 +210,11 @@ describe("pool compartilhado e busca em segundo plano", () => {
     let chamadas = 0;
     const contador = { nome: "contador", buscar: async () => { chamadas++; return []; } };
     const db = await abrirBancoLocal("memory://", 20);
-    const s = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [contador] });
+    const s = criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [contador] });
     await s.buscarDecisores({ cnpj: "33000167000101", cargos: ["comercial"], chave: "a" });
     await s.buscarDecisores({ cnpj: "33000167000101", cargos: ["marketing"], chave: "b" });
     expect(chamadas).toBe(2);
-    const s2 = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [{ ...contador, nome: "outra fonte" }] });
+    const s2 = criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [{ ...contador, nome: "outra fonte" }] });
     await s2.buscarDecisores({ cnpj: "33000167000101", cargos: ["comercial"], chave: "c" });
     expect(chamadas).toBe(3);
   });
@@ -204,7 +222,7 @@ describe("pool compartilhado e busca em segundo plano", () => {
   it("falha total das fontes não vai para o pool", async () => {
     const quebrado = { nome: "q", buscar: async () => { throw new Error("fora do ar"); } };
     const db = await abrirBancoLocal("memory://", 20);
-    const s = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [quebrado] });
+    const s = criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [quebrado] });
     const r = await s.buscarDecisores({ cnpj: "33000167000101", cargos: [], chave: "a" });
     expect(r.contatos).toHaveLength(0);
     expect(r.saldo).toBe(20);
@@ -235,7 +253,7 @@ describe("pool compartilhado e busca em segundo plano", () => {
 
   it("busca sem resultado devolve o crédito", async () => {
     const db = await abrirBancoLocal("memory://", 20);
-    const s = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [{ nome: "vazio", buscar: async () => [] }] });
+    const s = criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [{ nome: "vazio", buscar: async () => [] }] });
     const j = await s.iniciarBusca({ cnpj: "33000167000101", cargos: [], chave: "v" });
     await s.executarBusca(j.id);
     expect((await s.statusBusca(j.id)).status).toBe("concluida");
@@ -263,7 +281,7 @@ describe("pool compartilhado e busca em segundo plano", () => {
   it("falha numa fonte durante a busca não derruba: o crédito volta se nada for achado", async () => {
     const db = await abrirBancoLocal("memory://", 20);
     const quebrada = { nome: "q", buscar: async () => { throw new Error("x"); } };
-    const s = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [quebrada] });
+    const s = criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [quebrada] });
     const j = await s.iniciarBusca({ cnpj: "33000167000101", cargos: [], chave: "f" });
     await s.executarBusca(j.id);
     expect(await s.saldo()).toBe(20);
@@ -300,7 +318,7 @@ describe("equipe, convites e acesso", () => {
     expect((await s.equipe()).convites.map((c) => c.email)).toEqual(["outra@empresa.com.br"]);
 
     await como(db, OUTRO);
-    const sOutro = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [], ator: { usuarioId: OUTRO, papel: "membro", operadora: false } });
+    const sOutro = criarServicosPg({ db: papel(db, OUTRO), empresa: provedorEmpresa, contatos: [], ator: { usuarioId: OUTRO, papel: "membro", operadora: false } });
     expect(await sOutro.aceitarConvite(token)).toBe("00000000-0000-0000-0000-0000000000d0");
     // Uso único.
     await expect(sOutro.aceitarConvite(token)).rejects.toMatchObject({ status: 404 });
@@ -314,7 +332,7 @@ describe("equipe, convites e acesso", () => {
 
   it("membro comum não administra a equipe", async () => {
     const { db } = await comOutroUsuario();
-    const m = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [], ator: { usuarioId: OUTRO, papel: "membro", operadora: false } });
+    const m = criarServicosPg({ db: papel(db, OUTRO), empresa: provedorEmpresa, contatos: [], ator: { usuarioId: OUTRO, papel: "membro", operadora: false } });
     await expect(m.convidar("a@b.com", "membro")).rejects.toMatchObject({ status: 403 });
     await expect(m.alterarPapel(OUTRO, "administrador")).rejects.toMatchObject({ status: 403 });
     await expect(m.renomearOrganizacao("x")).rejects.toMatchObject({ status: 403 });
@@ -334,7 +352,7 @@ describe("equipe, convites e acesso", () => {
     await s.alterarPapel(OUTRO, "administrador");
     await s.alterarPapel(USUARIO_DEMO, "membro"); // agora há outro administrador
     await s.removerMembro(USUARIO_DEMO);
-    const acoes = (await criarServicosPg({ db, empresa: provedorEmpresa, contatos: [], ator: { usuarioId: OUTRO, papel: "administrador", operadora: false } }).auditoriaRecente()).map((a) => a.acao);
+    const acoes = (await criarServicosPg({ db: papel(db, OUTRO), empresa: provedorEmpresa, contatos: [], ator: { usuarioId: OUTRO, papel: "administrador", operadora: false } }).auditoriaRecente()).map((a) => a.acao);
     expect(acoes).toEqual(expect.arrayContaining(["equipe.papel", "equipe.remover"]));
   });
 
@@ -357,7 +375,7 @@ describe("base colaborativa", () => {
   it("empresa consultada fica na base compartilhada e a API pública não é chamada de novo", async () => {
     let chamadas = 0;
     const db = await abrirBancoLocal("memory://", 20);
-    const s = criarServicosPg({ db, empresa: { nome: "x", buscarPorCnpj: async () => { chamadas++; return empresa; } }, contatos: [] });
+    const s = criarServicosPg({ db: papel(db), empresa: { nome: "x", buscarPorCnpj: async () => { chamadas++; return empresa; } }, contatos: [] });
     await s.consultarEmpresa("33000167000101");
     await s.consultarEmpresa("33000167000101");
     expect(chamadas).toBe(1);
@@ -425,7 +443,7 @@ describe("busca por site", () => {
     const db = await abrirBancoLocal("memory://", 5);
     let visitas = 0;
     const s = criarServicosPg({
-      db, empresa: provedorEmpresa, contatos: [new ProvedorDemo()],
+      db: papel(db), empresa: provedorEmpresa, contatos: [new ProvedorDemo()],
       descobridor: async () => { visitas++; return [{ cnpj: "33000167000101", ocorrencias: 2 }]; },
     });
     const r = await s.resolverSite("https://www.acme.com.br/contato");
@@ -440,7 +458,7 @@ describe("busca por site", () => {
 
   it("sem CNPJ no site, pede o CNPJ; site inválido é recusado", async () => {
     const db = await abrirBancoLocal("memory://", 5);
-    const s = criarServicosPg({ db, empresa: provedorEmpresa, contatos: [new ProvedorDemo()], descobridor: async () => [] });
+    const s = criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [new ProvedorDemo()], descobridor: async () => [] });
     await expect(s.resolverSite("vazio.com.br")).rejects.toThrow(/CNPJ/);
     await expect(s.resolverSite("not a site")).rejects.toThrow(/inválido/);
   });
@@ -504,11 +522,198 @@ describe("pesquisa avançada: setor, porte, abertura e contato", () => {
       `insert into rf_estabelecimento (cnpj, razao_social, nome_fantasia, matriz, situacao, cnae, uf, municipio, bairro, cep, porte, email, telefone, aberta_em, busca) values
        ('11222333000181','CLINICA B LTDA','Clínica B',true,'ATIVA',8630503,'RJ','Rio de Janeiro','Tijuca','20270000','Micro empresa','contato@clinicab.com.br','2133334444','2020-05-01','clinica b ltda clinica b')`,
     );
-    const s2 = criarServicosPg({ db, empresa: { nome: "x", buscarPorCnpj: async () => { throw new Error("limite"); } }, contatos: [new ProvedorDemo()] });
+    const s2 = criarServicosPg({ db: papel(db), empresa: { nome: "x", buscarPorCnpj: async () => { throw new Error("limite"); } }, contatos: [new ProvedorDemo()] });
     const e = await s2.consultarEmpresa("11222333000181");
     expect(e).toMatchObject({ razaoSocial: "CLINICA B LTDA", municipio: "Rio de Janeiro", abertaEm: "2020-05-01", matriz: true });
     expect(e.endereco).toMatchObject({ bairro: "Tijuca", cep: "20270000" });
     expect(e.emailsCadastrais).toContain("contato@clinicab.com.br");
     expect(e.telefones).toContain("(21) 33334444");
+  });
+});
+
+describe("opt-out com confirmação e limite de pedidos", () => {
+  it("só apaga depois do token do e-mail, que vale uma vez", async () => {
+    const { db, s } = await novo();
+    const r = await busca(s, [], "k-opt");
+    const contato = r.contatos[0];
+    await s.revelar({ contatoId: contato.id, campo: "email" });
+    const email = (await db.query<{ email: string }>("select email from contato_dado where email is not null limit 1")).rows[0].email;
+
+    const token = await s.pedirOptOut(email);
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    // Antes de confirmar nada foi apagado, e o banco só guarda o hash.
+    expect((await db.query("select 1 from opt_out where email = $1", [email.toLowerCase()])).rows).toHaveLength(0);
+    expect((await db.query("select token_hash from optout_pedido")).rows[0]).not.toEqual({ token_hash: token });
+
+    expect((await s.confirmarOptOut(token!)).contatosAfetados).toBeGreaterThan(0);
+    expect((await db.query("select 1 from opt_out where email = $1", [email.toLowerCase()])).rows).toHaveLength(1);
+    await expect(s.confirmarOptOut(token!)).rejects.toThrow(/inválido ou expirado/);
+  });
+
+  it("recusa token inválido, expirado e excesso de pedidos por e-mail", async () => {
+    const { db, s } = await novo();
+    await expect(s.confirmarOptOut("nope")).rejects.toThrow(/inválido/);
+    const t = (await s.pedirOptOut("pessoa@empresa.com.br"))!;
+    await db.query("update optout_pedido set expira_em = now() - interval '1 minute'");
+    await expect(s.confirmarOptOut(t)).rejects.toThrow(/expirado/);
+    await s.pedirOptOut("pessoa@empresa.com.br");
+    await s.pedirOptOut("pessoa@empresa.com.br");
+    expect(await s.pedirOptOut("pessoa@empresa.com.br")).toBeNull();
+  });
+
+  it("limite por chave conta no banco e libera depois da janela", async () => {
+    const { db, s } = await novo();
+    expect(await s.permitirPedido("ip:1", 2, 3600)).toBe(true);
+    expect(await s.permitirPedido("ip:1", 2, 3600)).toBe(true);
+    expect(await s.permitirPedido("ip:1", 2, 3600)).toBe(false);
+    expect(await s.permitirPedido("ip:2", 2, 3600)).toBe(true);
+    await db.query("update limite_pedido set criado_em = now() - interval '2 hours'");
+    expect(await s.permitirPedido("ip:1", 2, 3600)).toBe(true);
+  });
+});
+
+describe("pesquisas salvas e avisos", () => {
+  async function comBase() {
+    const ctx = await novo();
+    await ctx.db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, nome_fantasia, matriz, situacao, cnae, uf, municipio, aberta_em, busca) values
+       ('33000167000101','PADARIA NOVA','Pão Novo',true,'ATIVA',1091102,'RJ','Niterói', current_date - interval '1 day','padaria nova pao novo'),
+       ('11222333000181','PADARIA VELHA','Pão Velho',true,'ATIVA',1091102,'RJ','Niterói', current_date - interval '5 years','padaria velha pao velho'),
+       ('00000000000191','PADARIA SP','Pão SP',true,'ATIVA',1091102,'SP','Santos', current_date - interval '1 day','padaria sp pao sp')`,
+    );
+    return ctx;
+  }
+
+  it("salva, lista e remove; recusa nome vazio e pesquisa sem filtro", async () => {
+    const { s } = await novo();
+    await expect(s.salvarPesquisa("", { uf: "RJ" })).rejects.toThrow(/nome/i);
+    await expect(s.salvarPesquisa("vazia", {})).rejects.toThrow(/filtro/i);
+    const id = await s.salvarPesquisa("Padarias RJ", { uf: "RJ", termos: "padaria", lixo: "x" } as never);
+    const [p] = await s.pesquisasSalvas();
+    expect(p).toMatchObject({ id, nome: "Padarias RJ", filtros: { uf: "RJ", termos: "padaria" }, avisar: true });
+    expect(p.filtros).not.toHaveProperty("lixo");
+    await s.removerPesquisa(id);
+    expect(await s.pesquisasSalvas()).toEqual([]);
+  });
+
+  it("avisa só das empresas abertas desde o último aviso e não repete no mesmo dia", async () => {
+    const { db, s } = await comBase();
+    await s.salvarPesquisa("Padarias RJ", { uf: "RJ", termos: "padaria" });
+    await db.query("update pesquisa_salva set ultimo_aviso = current_date - 3");
+    const enviados: { para: string; assunto: string; texto: string }[] = [];
+    const r = await s.rodarAlertas(async (m) => void enviados.push(m), "https://app.exemplo");
+    expect(r).toEqual({ avaliadas: 1, enviadas: 1, falhas: 0 });
+    expect(enviados[0].para).toBe("demo@conecta-b2b.invalid");
+    expect(enviados[0].assunto).toMatch(/1 empresa\(s\) nova\(s\)/);
+    expect(enviados[0].texto).toContain("Pão Novo");
+    expect(enviados[0].texto).not.toContain("Pão Velho");
+    expect(enviados[0].texto).not.toContain("Pão SP");
+    expect(enviados[0].texto).toContain("https://app.exemplo/descobrir?alvo=33000167000101");
+    expect(await s.rodarAlertas(async () => {}, "https://app.exemplo")).toEqual({ avaliadas: 0, enviadas: 0, falhas: 0 });
+  });
+
+  it("falha de envio não consome o aviso: tenta de novo na próxima rodada", async () => {
+    const { db, s } = await comBase();
+    await s.salvarPesquisa("Padarias RJ", { uf: "RJ" });
+    await db.query("update pesquisa_salva set ultimo_aviso = current_date - 3");
+    const r1 = await s.rodarAlertas(async () => { throw new Error("fora do ar"); }, "https://x");
+    expect(r1).toMatchObject({ enviadas: 0, falhas: 1 });
+    const r2 = await s.rodarAlertas(async () => {}, "https://x");
+    expect(r2).toMatchObject({ enviadas: 1, falhas: 0 });
+  });
+
+  it("sem empresa nova, não envia, mas marca o dia", async () => {
+    const { db, s } = await comBase();
+    await s.salvarPesquisa("Só Santos antigas", { uf: "SP", cidade: "Santos", porte: ["Demais"] });
+    await db.query("update pesquisa_salva set ultimo_aviso = current_date - 3");
+    expect(await s.rodarAlertas(async () => { throw new Error("não devia enviar"); }, "https://x")).toEqual({ avaliadas: 1, enviadas: 0, falhas: 0 });
+    expect((await db.query("select ultimo_aviso = current_date as hoje from pesquisa_salva")).rows[0]).toEqual({ hoje: true });
+  });
+});
+
+describe("exportação para CRM", () => {
+  it("leva a empresa e só o que foi revelado", async () => {
+    const { s } = await novo();
+    const r = await busca(s, [], "k-crm");
+    const lista = await s.criarLista("Para o CRM");
+    await s.adicionarALista(lista.id, r.contatos.map((c) => c.id));
+    await s.revelar({ contatoId: r.contatos[0].id, campo: "email" });
+    const csv = await s.exportarCsv(lista.id, "hubspot");
+    const linhas = csv.replace("﻿", "").split("\r\n");
+    expect(linhas[0]).toMatch(/^First Name,Last Name,Email/);
+    expect(csv).toContain("EMPRESA DE TESTE SA");
+    expect(linhas.slice(1).filter((l) => /@/.test(l))).toHaveLength(1);
+  });
+});
+
+describe("chaves de API", () => {
+  it("cria uma vez, guarda só o hash, valida, e deixa de valer quando revogada", async () => {
+    const { db, s } = await novo();
+    const chave = await s.criarChaveApi("Integração CRM");
+    expect(chave).toMatch(/^cb2b_[0-9a-f]{48}$/);
+    expect(JSON.stringify((await db.query("select * from api_chave")).rows)).not.toContain(chave);
+    const dono = await s.validarChaveApi(chave);
+    expect(dono).toMatchObject({ usuarioId: USUARIO_DEMO });
+    const [k] = await s.chavesApi();
+    expect(k).toMatchObject({ nome: "Integração CRM", prefixo: chave.slice(0, 9), revogada: false });
+    expect(k.ultimoUso).toBeTruthy();
+    await s.revogarChaveApi(k.id);
+    expect(await s.validarChaveApi(chave)).toBeNull();
+  });
+
+  it("recusa chave com formato errado, desconhecida, e quem criou deixa de ser administrador", async () => {
+    const { db, s } = await novo();
+    expect(await s.validarChaveApi("qualquer")).toBeNull();
+    expect(await s.validarChaveApi(`cb2b_${"0".repeat(48)}`)).toBeNull();
+    const chave = await s.criarChaveApi("x");
+    // Outro administrador assume (a organização não pode ficar sem um), e quem criou a chave vira membro comum.
+    const outro = "00000000-0000-0000-0000-0000000000f9";
+    await db.query("insert into auth.users values ($1)", [outro]);
+    await db.query(`insert into neon_auth."user" (id, name, email) values ($1, 'Outro', 'outro@x.com')`, [outro]);
+    await db.query("insert into membro values ($1, $2, 'administrador')", [ORG_DEMO, outro]);
+    await db.query("update membro set papel = 'membro' where usuario_id = $1", [USUARIO_DEMO]);
+    expect(await s.validarChaveApi(chave)).toBeNull();
+  });
+
+  it("só administrador gerencia chaves e há limite de chaves ativas", async () => {
+    const { db, s } = await novo();
+    for (let i = 0; i < 10; i++) await s.criarChaveApi(`k${i}`);
+    await expect(s.criarChaveApi("11")).rejects.toThrow(/Limite/);
+    await expect(s.criarChaveApi("")).rejects.toThrow(/nome/);
+    const membro = criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [], ator: { usuarioId: USUARIO_DEMO, papel: "membro", operadora: false } });
+    await expect(membro.chavesApi()).rejects.toThrow();
+  });
+});
+
+describe("sugestões da pesquisa", () => {
+  it("sugere cidades pela lista de municípios (sem acento, por ordem de tamanho) e atividades por texto ou código", async () => {
+    const { db, s } = await novo();
+    await db.query(`insert into rf_cnae (codigo, descricao, busca) values (1091102, 'Fabricação de produtos de padaria e confeitaria', 'fabricacao de produtos de padaria e confeitaria'), (4721102, 'Padaria e confeitaria com predominância de revenda', 'padaria e confeitaria com predominancia de revenda')`);
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, matriz, situacao, cnae, uf, municipio, busca) values
+       ('33000167000101','A',true,'ATIVA',1091102,'RJ','NITERÓI','a'), ('11222333000181','B',true,'ATIVA',1091102,'RJ','NITERÓI','b'),
+       ('00000000000191','C',true,'ATIVA',1091102,'RJ','NILÓPOLIS','c'), ('11111111000191','D',true,'ATIVA',1091102,'SP','NIQUELÂNDIA','d')`,
+    );
+    await db.query("select atualizar_municipios()");
+    expect((await s.sugerir("cidade", "ni", "RJ")).map((x) => x.valor)).toEqual(["NITERÓI", "NILÓPOLIS"]);
+    expect((await s.sugerir("cidade", "Niterói")).map((x) => x.valor)).toEqual(["NITERÓI"]);
+    expect((await s.sugerir("cidade", "ni", "SP")).map((x) => x.valor)).toEqual(["NIQUELÂNDIA"]);
+    expect(await s.sugerir("cidade", "n")).toEqual([]);
+    expect((await s.sugerir("segmento", "padaria")).map((x) => x.detalhe)).toEqual(["CNAE 1091102", "CNAE 4721102"]);
+    expect((await s.sugerir("segmento", "4721")).map((x) => x.detalhe)).toEqual(["CNAE 4721102"]);
+  });
+});
+
+describe("cobertura da base", () => {
+  it("diz quais UFs estão carregadas e quantas empresas cada uma tem", async () => {
+    const { db, s } = await novo();
+    expect(await s.cobertura()).toEqual([]);
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, matriz, situacao, cnae, uf, municipio, busca) values
+       ('33000167000101','A',true,'ATIVA',1091102,'RJ','NITERÓI','a'), ('11222333000181','B',true,'ATIVA',1091102,'RJ','RIO','b'),
+       ('00000000000191','C',true,'ATIVA',1091102,'MG','BELO HORIZONTE','c')`,
+    );
+    await db.query("select atualizar_municipios()");
+    expect(await s.cobertura()).toEqual([{ uf: "MG", empresas: 1 }, { uf: "RJ", empresas: 2 }]);
   });
 });

@@ -1,15 +1,19 @@
+import { createHash, randomBytes } from "node:crypto";
 import type { Db } from "@/db/conexao";
 import { buscarEmCascata, type Tentativa } from "./cascade";
 import { TABELA_CUSTOS_PADRAO, type Lancamento, type TabelaCustos } from "./credits";
 import { alvoValido, chaveAlvo, normalizarBusca, somenteDigitos } from "./cnpj";
 import { lerCsv, normalizarCabecalho } from "./csv";
 import { ORG_DEMO, USUARIO_DEMO } from "@/db/local";
+import { enriquecer as enriquecerEmpresa, type Enriquecimento } from "./enriquecimento";
+import { verificarDominiosDeEmail } from "./providers/mx";
 import { dominioSeguro } from "./providers/site";
 import type { Contato, Empresa, ProvedorContatos, ProvedorEmpresa } from "./providers/types";
 import { VERSAO_EMPRESA } from "./providers/types";
+import { montarCsv, type FormatoExportacao, type LinhaExportacao } from "./exportacao";
+import { limparFiltros, paraParametros, resumoFiltros, type FiltrosUrl } from "./filtrosUrl";
 import { ABERTURAS, PORTES, faixasDeSetores } from "./setores";
 import {
-  celulaCsv,
   ErroDeNegocio,
   visivel,
   type ContatoGuardado,
@@ -26,7 +30,12 @@ export interface PesquisaFiltros {
   comEmail?: boolean;
   comTelefone?: boolean;
   ordem?: "nome" | "recentes";
+  /** Só empresas abertas a partir desta data (AAAA-MM-DD). */
+  abertaDesde?: string;
   incluirFiliais?: boolean; pagina?: number;
+}
+export interface PesquisaSalva {
+  id: string; nome: string; filtros: FiltrosUrl; avisar: boolean; ultimoAviso: string; criadoEm: string;
 }
 export interface ItemPesquisa {
   cnpj: string; razaoSocial: string; nomeFantasia?: string; municipio?: string; uf?: string;
@@ -105,6 +114,8 @@ interface Dependencias {
 }
 
 type Linha = Record<string, unknown>;
+
+const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -298,11 +309,14 @@ export function criarServicosPg({
       return { contatos: juntar(cache.contatos.filter(naoSaiu)), tentativas: cache.tentativas, doPool: true };
     }
 
-    const { contatos, tentativas } = await buscarEmCascata(
+    const cascata = await buscarEmCascata(
       provedores,
       { empresa, cargos },
       { optOut: (c) => !naoSaiu(c), progresso },
     );
+    const tentativas = cascata.tentativas;
+    // Descarta e-mail de domínio que não recebe mensagens e marca os demais (checagem gratuita por MX).
+    const contatos = await verificarDominiosDeEmail(cascata.contatos);
     const todasFalharam = tentativas.length > 0 && tentativas.every((t) => t.erro);
     if (!todasFalharam) {
       await db.query(
@@ -798,7 +812,8 @@ export function criarServicosPg({
       const setores = (f.setores ?? []).filter(Boolean);
       const portes = (f.porte ?? []).filter((x) => (PORTES as readonly string[]).includes(x));
       const abertura = ABERTURAS.find((a) => a.id === f.abertura);
-      const temFiltro = nome || termos.length || uf || cidade || bairro || segmento || setores.length || portes.length || abertura || f.comEmail || f.comTelefone;
+      const abertaDesde = /^\d{4}-\d{2}-\d{2}$/.test(f.abertaDesde ?? "") ? f.abertaDesde : undefined;
+      const temFiltro = abertaDesde || nome || termos.length || uf || cidade || bairro || segmento || setores.length || portes.length || abertura || f.comEmail || f.comTelefone;
       if (!temFiltro) return { itens: [], total: 0, baseReceita: await temBaseReceita(), sites: [] };
 
       const where: string[] = ["e.situacao = 'ATIVA'"];
@@ -823,6 +838,7 @@ export function criarServicosPg({
         where.push(`(${faixas.map(([a, b]) => `e.cnae between ${a} and ${b}`).join(" or ") || "false"})`);
       }
       if (portes.length) where.push(`e.porte = any(${add(portes)}::text[])`);
+      if (abertaDesde) where.push(`e.aberta_em >= ${add(abertaDesde)}::date`);
       if (abertura) {
         where.push(`e.aberta_em <= current_date - make_interval(years => ${Math.floor(abertura.deAnos)})`);
         if (abertura.ateAnos < 100) where.push(`e.aberta_em > current_date - make_interval(years => ${Math.floor(abertura.ateAnos)})`);
@@ -966,6 +982,175 @@ export function criarServicosPg({
       // Mudou o site: as varreduras guardadas usaram o site antigo, então são descartadas.
       if ((antes?.dominio ?? null) !== dominio) await db.query("delete from pool_busca where cnpj = $1", [d]);
       await auditar("base.empresa", d, { dominio, nota, tags });
+    },
+
+    /** Informações extras da empresa (CVM, Wikidata, notícias, sanções), cada fonte com cache e falha próprias. */
+    async enriquecer(cnpj: string): Promise<Enriquecimento> {
+      if (!alvoValido(cnpj)) throw new ErroDeNegocio("CNPJ ou site inválido.");
+      const e = await servicos.consultarEmpresa(cnpj);
+      return enriquecerEmpresa(db, { cnpj: chaveAlvo(cnpj), razaoSocial: e.razaoSocial, nomeFantasia: e.nomeFantasia, dominio: e.dominio });
+    },
+
+    // ───────────── Chaves de API ─────────────
+
+    async chavesApi() {
+      exigirAdmin();
+      const r = await db.query<Linha>(
+        "select id, nome, prefixo, criado_em, ultimo_uso, revogada_em from api_chave where organizacao_id = $1 order by criado_em desc limit 50",
+        [org],
+      );
+      return r.rows.map((x) => ({
+        id: x.id as string, nome: x.nome as string, prefixo: x.prefixo as string,
+        criadaEm: new Date(x.criado_em as string).toISOString(),
+        ultimoUso: x.ultimo_uso ? new Date(x.ultimo_uso as string).toISOString() : undefined,
+        revogada: Boolean(x.revogada_em),
+      }));
+    },
+
+    /** Cria a chave e devolve o texto UMA vez; o banco guarda só o hash. */
+    async criarChaveApi(nome: string): Promise<string> {
+      exigirAdmin();
+      const n = nome.trim();
+      if (!n || n.length > 80) throw new ErroDeNegocio("Dê um nome de até 80 caracteres à chave.");
+      const ativas = (await um<{ n: number }>("select count(*)::int as n from api_chave where organizacao_id = $1 and revogada_em is null", [org]))?.n ?? 0;
+      if (ativas >= 10) throw new ErroDeNegocio("Limite de 10 chaves ativas. Revogue alguma antes.");
+      const chave = `cb2b_${randomBytes(24).toString("hex")}`;
+      const r = await um<{ id: string }>(
+        "insert into api_chave (organizacao_id, criado_por, nome, prefixo, hash) values ($1,$2,$3,$4,$5) returning id",
+        [org, ator.usuarioId, n, chave.slice(0, 9), hashToken(chave)],
+      );
+      await auditar("api.criar_chave", r!.id, { nome: n });
+      return chave;
+    },
+
+    async revogarChaveApi(id: string): Promise<void> {
+      exigirAdmin();
+      if (!UUID.test(id)) throw new ErroDeNegocio("Chave não encontrada.", 404);
+      await db.query("update api_chave set revogada_em = now() where id = $1 and organizacao_id = $2 and revogada_em is null", [id, org]);
+      await auditar("api.revogar_chave", id);
+    },
+
+    /** Resolve uma chave de API para a organização e o usuário dono dela (sem sessão). null se inválida ou revogada. */
+    async validarChaveApi(chave: string): Promise<{ orgId: string; usuarioId: string } | null> {
+      if (!/^cb2b_[0-9a-f]{48}$/.test(chave)) return null;
+      const r = await um<{ organizacao_id: string; usuario_id: string }>("select * from api_chave_validar($1)", [hashToken(chave)]);
+      return r ? { orgId: r.organizacao_id, usuarioId: r.usuario_id } : null;
+    },
+
+    /** UFs que existem na base da Receita carregada e quantas empresas cada uma tem (a base não cobre o Brasil inteiro). */
+    async cobertura(): Promise<{ uf: string; empresas: number }[]> {
+      const r = await db.query<Linha>("select uf, sum(qtd)::bigint as n from rf_municipio group by uf order by uf");
+      return r.rows.map((x) => ({ uf: x.uf as string, empresas: Number(x.n) }));
+    },
+
+    /** Sugestões ao digitar na pesquisa: cidades (da lista de municípios da base) e atividades (CNAE). */
+    async sugerir(campo: "cidade" | "segmento", q: string, uf?: string): Promise<{ valor: string; detalhe?: string }[]> {
+      const t = normalizarBusca(q);
+      if (t.length < 2) return [];
+      if (campo === "cidade") {
+        const u = (uf ?? "").trim().toUpperCase().slice(0, 2);
+        const r = await db.query<Linha>(
+          `select nome, uf, qtd from rf_municipio where nome_busca like $1 || '%' ${u ? "and uf = $2" : ""}
+            order by qtd desc limit 8`,
+          u ? [t, u] : [t],
+        );
+        return r.rows.map((x) => ({ valor: x.nome as string, detalhe: `${x.uf as string} · ${Number(x.qtd).toLocaleString("pt-BR")} empresas` }));
+      }
+      const digitos = t.replace(/\D/g, "");
+      const r = await db.query<Linha>(
+        digitos.length >= 3
+          ? "select codigo, descricao from rf_cnae where codigo::text like $1 || '%' order by codigo limit 8"
+          : "select codigo, descricao from rf_cnae where busca like '%' || $1 || '%' order by codigo limit 8",
+        [digitos.length >= 3 ? digitos : t],
+      );
+      return r.rows.map((x) => ({ valor: x.descricao as string, detalhe: `CNAE ${x.codigo as number}` }));
+    },
+
+    // ───────────── Pesquisas salvas e avisos ─────────────
+
+    async pesquisasSalvas(): Promise<PesquisaSalva[]> {
+      const r = await db.query<Linha>(
+        "select id, nome, filtros, avisar, ultimo_aviso, criado_em from pesquisa_salva where organizacao_id = $1 order by criado_em desc limit 100",
+        [org],
+      );
+      return r.rows.map((x) => ({
+        id: x.id as string, nome: x.nome as string, filtros: limparFiltros(x.filtros), avisar: x.avisar === true,
+        ultimoAviso: new Date(x.ultimo_aviso as string).toISOString().slice(0, 10), criadoEm: new Date(x.criado_em as string).toISOString(),
+      }));
+    },
+
+    async salvarPesquisa(nome: string, filtros: FiltrosUrl, avisar = true): Promise<string> {
+      const n = nome.trim();
+      if (!n || n.length > 80) throw new ErroDeNegocio("Dê um nome de até 80 caracteres à pesquisa.");
+      const f = limparFiltros(filtros);
+      if (!Object.keys(f).length) throw new ErroDeNegocio("Escolha ao menos um filtro antes de salvar.");
+      const total = (await um<{ n: number }>("select count(*)::int as n from pesquisa_salva where organizacao_id = $1", [org]))?.n ?? 0;
+      if (total >= 50) throw new ErroDeNegocio("Limite de 50 pesquisas salvas por organização.");
+      const r = await um<{ id: string }>(
+        "insert into pesquisa_salva (organizacao_id, criado_por, nome, filtros, avisar) values ($1,$2,$3,$4::jsonb,$5) returning id",
+        [org, ator.usuarioId, n, JSON.stringify(f), avisar],
+      );
+      await auditar("pesquisa.salvar", r!.id, { nome: n });
+      return r!.id;
+    },
+
+    async removerPesquisa(id: string): Promise<void> {
+      if (!UUID.test(id)) throw new ErroDeNegocio("Pesquisa não encontrada.", 404);
+      await db.query("delete from pesquisa_salva where id = $1 and organizacao_id = $2", [id, org]);
+    },
+
+    /**
+     * Avisa por e-mail sobre empresas abertas desde o último aviso, para cada pesquisa salva com aviso ligado.
+     * Roda diariamente (cron). Só marca o aviso como feito depois que o e-mail sai, então falha de envio tenta de novo.
+     * Depende de a base da Receita ser atualizada: sem importação nova, não há empresa nova para avisar.
+     */
+    async rodarAlertas(
+      enviar: (m: { para: string; assunto: string; texto: string }) => Promise<void>,
+      urlBase: string,
+    ): Promise<{ avaliadas: number; enviadas: number; falhas: number }> {
+      const pend = await db.query<Linha>("select * from alertas_pendentes()");
+      let enviadas = 0;
+      let falhas = 0;
+      for (const p of pend.rows) {
+        try {
+          const f = limparFiltros(p.filtros);
+          const desde = new Date(p.ultimo_aviso as string).toISOString().slice(0, 10);
+          const r = await servicos.pesquisar({ ...f, abertaDesde: desde, ordem: "recentes" });
+          if (r.total > 0) {
+            const linhas = r.itens.slice(0, 10).map((i) => `- ${i.nomeFantasia || i.razaoSocial} (${[i.municipio, i.uf].filter(Boolean).join("/")}) ${urlBase}/descobrir?alvo=${i.cnpj}`);
+            await enviar({
+              para: String(p.email),
+              assunto: `${r.total} empresa(s) nova(s) em "${p.nome}"`,
+              texto:
+                `Desde ${desde}, ${r.total} empresa(s) abertas combinam com a sua pesquisa salva "${p.nome}" (${resumoFiltros(f)}).\n\n` +
+                `${linhas.join("\n")}\n\nVer todas: ${urlBase}/pesquisar?${paraParametros({ ...f, ordem: "recentes" })}\n\n` +
+                "Para parar de receber este aviso, desligue-o em Pesquisar > Pesquisas salvas.",
+            });
+            enviadas++;
+          }
+          await db.query("select alerta_registrar($1)", [p.id]);
+        } catch (e) {
+          falhas++;
+          console.error("alerta: falha na pesquisa", p.id, e instanceof Error ? e.message : e);
+        }
+      }
+      return { avaliadas: pend.rows.length, enviadas, falhas };
+    },
+
+    /** Dados que a mensagem de abordagem usa: nome e cargo da pessoa e fatos públicos da empresa (nada de e-mail ou telefone). */
+    async dadosParaAbordagem(contatoId: string) {
+      if (!UUID.test(contatoId)) throw new ErroDeNegocio("Contato não encontrado.", 404);
+      const [c] = await guardados([contatoId]);
+      if (!c) throw new ErroDeNegocio("Contato não encontrado.", 404);
+      const e = await servicos.consultarEmpresa(c.cnpj);
+      const idadeAnos = e.abertaEm ? Math.max(0, Math.floor((Date.now() - Date.parse(e.abertaEm)) / 31_557_600_000)) : undefined;
+      return {
+        contato: { nome: c.contato.nome, cargo: c.contato.cargo },
+        empresa: {
+          razaoSocial: e.razaoSocial, nomeFantasia: e.nomeFantasia, segmento: e.cnaePrincipal?.descricao,
+          municipio: e.municipio, uf: e.uf, idadeAnos,
+        },
+      };
     },
 
     /** Contribui com um contato para a base comum (visível a todos como resultado de busca, mediante crédito). */
@@ -1132,11 +1317,31 @@ export function criarServicosPg({
     },
 
     /** Exporta só o que já foi revelado; nada pago vaza no arquivo. */
-    async exportarCsv(listaId: string): Promise<string> {
-      const linhas = (await servicos.contatosDaLista(listaId)).map((c) =>
-        [c.nome, c.cargo, c.email, c.telefone, c.linkedinUrl, c.origem].map(celulaCsv).join(","),
-      );
-      return ["Nome,Cargo,E-mail,Telefone,LinkedIn,Origem", ...linhas].join("\n");
+    async exportarCsv(listaId: string, formato: FormatoExportacao = "padrao"): Promise<string> {
+      const l = (await servicos.listas()).find((x) => x.id === listaId);
+      if (!l) throw new ErroDeNegocio("Lista não encontrada.", 404);
+      const gs = await guardados(l.contatoIds);
+      const cnpjs = [...new Set(gs.map((g) => g.cnpj))];
+      const empresas = cnpjs.length
+        ? await db.query<Linha>(
+            `select c.cnpj, c.dados->>'razaoSocial' as razao, c.dados->>'nomeFantasia' as fantasia,
+                    coalesce(i.dominio, c.dados->>'dominio') as dominio
+               from empresa_cache c left join base_empresa_info i on i.cnpj = c.cnpj where c.cnpj = any($1::text[])`,
+            [cnpjs],
+          )
+        : { rows: [] as Linha[] };
+      const porCnpj = new Map(empresas.rows.map((r) => [r.cnpj as string, r]));
+      // Só o que já foi revelado sai no arquivo: o dado pago continua oculto.
+      const linhas: LinhaExportacao[] = gs.map((g) => {
+        const v = visivel(g);
+        const e = porCnpj.get(g.cnpj);
+        return {
+          nome: v.nome, cargo: v.cargo, email: v.email, telefone: v.telefone, linkedin: v.linkedinUrl, origem: v.origem,
+          empresa: (e?.fantasia as string) || (e?.razao as string) || undefined,
+          site: (e?.dominio as string) || (g.cnpj.startsWith("site:") ? g.cnpj.slice(5) : undefined),
+        };
+      });
+      return montarCsv(formato, linhas);
     },
 
     /**
@@ -1146,27 +1351,53 @@ export function criarServicosPg({
     async registrarOptOut(email: string): Promise<{ contatosAfetados: number }> {
       const e = email.trim().toLowerCase();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new ErroDeNegocio("E-mail inválido.");
-      await db.query("insert into opt_out (email) values ($1) on conflict do nothing", [e]);
-      const r = await db.query<{ contato_id: string }>(
-        "update contato_dado set email = null, telefone = null where lower(email) = $1 returning contato_id",
+      const r = await um<{ n: number }>("select aplicar_opt_out($1) as n", [e]);
+      return { contatosAfetados: r?.n ?? 0 };
+    },
+
+    /**
+     * Cria um pedido de opt-out a ser confirmado pelo link enviado ao e-mail. Devolve o token (só vai para o
+     * e-mail, o banco guarda o hash) ou null quando já há pedidos demais para esse e-mail na última hora.
+     */
+    async pedirOptOut(email: string): Promise<string | null> {
+      const e = email.trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new ErroDeNegocio("E-mail inválido.");
+      const recentes = await um<{ n: number }>(
+        "select count(*)::int as n from optout_pedido where email = $1 and criado_em > now() - interval '1 hour'",
         [e],
       );
-      if (r.rows.length > 0) {
-        await db.query(
-          "update contato set tem_email = false, tem_telefone = false where id = any($1::uuid[])",
-          [r.rows.map((x) => x.contato_id)],
-        );
-      }
-      // O pool também guarda cópias: quem pediu para sair some dele, como some das buscas novas.
-      await db.query(
-        `update pool_busca set contatos = (
-           select coalesce(jsonb_agg(c) filter (where lower(coalesce(c->>'email', '')) <> $1), '[]'::jsonb)
-             from jsonb_array_elements(contatos) c)
-          where contatos::text ilike '%' || $1 || '%'`,
-        [e],
+      if ((recentes?.n ?? 0) >= 3) return null;
+      const token = randomBytes(32).toString("hex");
+      await db.query("insert into optout_pedido (token_hash, email) values ($1, $2)", [hashToken(token), e]);
+      return token;
+    },
+
+    /** Confirma um pedido de opt-out pelo token do e-mail e aplica o apagamento. Cada token vale uma vez. */
+    async confirmarOptOut(token: string): Promise<{ contatosAfetados: number }> {
+      if (!/^[0-9a-f]{64}$/.test(token)) throw new ErroDeNegocio("Link inválido ou expirado.", 400);
+      const p = await um<{ email: string }>(
+        `update optout_pedido set usado_em = now()
+          where token_hash = $1 and usado_em is null and expira_em > now() returning email`,
+        [hashToken(token)],
       );
-      await db.query("delete from base_contato where lower(email) = $1", [e]);
-      return { contatosAfetados: r.rows.length };
+      if (!p) throw new ErroDeNegocio("Link inválido ou expirado.", 400);
+      return servicos.registrarOptOut(p.email);
+    },
+
+    /**
+     * Limite de pedidos por chave (ex.: IP), contado no banco para valer em todos os servidores.
+     * Devolve true se o pedido pode seguir (e já o conta).
+     */
+    async permitirPedido(chave: string, maximo: number, janelaSegundos: number): Promise<boolean> {
+      const r = await um<{ n: number }>(
+        "select count(*)::int as n from limite_pedido where chave = $1 and criado_em > now() - make_interval(secs => $2)",
+        [chave, janelaSegundos],
+      );
+      if ((r?.n ?? 0) >= maximo) return false;
+      await db.query("insert into limite_pedido (chave) values ($1)", [chave]);
+      // Limpeza ocasional, para a tabela não crescer.
+      if (Math.random() < 0.02) await db.query("delete from limite_pedido where criado_em < now() - interval '1 day'");
+      return true;
     },
 
     /**

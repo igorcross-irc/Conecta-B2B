@@ -1,0 +1,148 @@
+{
+ "updated": "2026-10-23T14:00:05.496Z",
+ "taxId": "33000167000101",
+ "alias": "Petrobras - Edise",
+ "founded": "1966-09-28",
+ "head": true,
+ "company": {
+  "members": [
+   {
+    "since": null,
+    "person": {
+     "id": "f887873e-1265-5457-8732-0f9cb0c4be85",
+     "type": "UNKNOWN",
+     "name": "Magda Maria de Regina Chambriard",
+     "taxId": null,
+     "country": {
+      "id": 999,
+      "name": "Desconhecido"
+     }
+    },
+    "role": {
+     "id": 8,
+     "text": "Conselheiro de Administração"
+    }
+   },
+   {
+    "since": "2025-07-29",
+    "person": {
+     "id": "183ae7de-97a9-510a-908d-cc82c43344a1",
+     "type": "NATURAL",
+     "name": "Angelica Garcia Cobas Laureano",
+     "taxId": "***912137**",
+     "age": "71-80",
+     "country": {
+      "id": 76,
+      "name": "Brasil"
+     }
+    },
+    "role": {
+     "id": 10,
+     "text": "Diretor"
+    }
+   },
+   {
+    "since": "2024-07-17",
+    "person": {
+     "id": "573d6872-0a20-536b-90fa-0ef5e7fd9a3e",
+     "type": "NATURAL",
+     "name": "Renata Faria Rodrigues Baruzzi Lopes",
+     "taxId": "***944618**",
+     "age": "51-60",
+     "country": {
+      "id": 76,
+      "name": "Brasil"
+     }
+    },
+    "role": {
+     "id": 10,
+     "text": "Diretor"
+    }
+   }
+  ],
+  "name": "PETROLEO BRASILEIRO S A PETROBRAS",
+  "jurisdiction": "União",
+  "equity": 205431960490.52,
+  "nature": {
+   "id": 2038,
+   "text": "Sociedade de Economia Mista"
+  },
+  "size": {
+   "id": 5,
+   "acronym": "DEMAIS",
+   "text": "Demais"
+  },
+  "simples": {
+   "optant": false,
+   "since": null,
+   "history": [],
+   "events": []
+  },
+  "simei": {
+   "optant": false,
+   "since": null,
+   "history": []
+  },
+  "id": "33000167"
+ },
+ "statusDate": "2005-11-03",
+ "status": {
+  "id": 2,
+  "text": "Ativa"
+ },
+ "address": {
+  "municipality": 3304557,
+  "street": "Avenida Republica do Chile",
+  "number": "65",
+  "district": "Centro",
+  "city": "Rio de Janeiro",
+  "state": "RJ",
+  "details": null,
+  "zip": "20031170",
+  "country": {
+   "id": 76,
+   "name": "Brasil"
+  }
+ },
+ "phones": [
+  {
+   "type": "LANDLINE",
+   "area": "21",
+   "number": "21660000"
+  }
+ ],
+ "emails": [
+  {
+   "ownership": "CORPORATE",
+   "address": "cc-rfisc@petrobras.com.br",
+   "domain": "petrobras.com.br"
+  }
+ ],
+ "mainActivity": {
+  "id": 600001,
+  "text": "Extração de petróleo e gás natural"
+ },
+ "sideActivities": [
+  {
+   "id": 1921700,
+   "text": "Fabricação de produtos do refino de petróleo"
+  },
+  {
+   "id": 3520401,
+   "text": "Produção de gás; processamento de gás natural"
+  },
+  {
+   "id": 3520402,
+   "text": "Distribuição de combustíveis gasosos por redes urbanas"
+  },
+  {
+   "id": 4681801,
+   "text": "Comércio atacadista de álcool carburante, biodiesel, gasolina e demais derivados de petróleo, exceto lubrificantes, não realizado por transportador retalhista (TRR)"
+  },
+  {
+   "id": 8630599,
+   "text": "Atividades de atenção ambulatorial não especificadas anteriormente"
+  }
+ ],
+ "suframa": []
+}

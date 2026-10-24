@@ -26,8 +26,13 @@ export interface LinhaReceita {
 export interface OpcoesLeitura {
   /** Pasta/URL com as subpastas estabelecimentos/, empresas/, cnaes/, municipios/ (cada uma com *.parquet). */
   fonte: string;
+  /** Vazio = todas as UFs (só faz sentido junto de `busca` ou `raizes`, senão é a base inteira). */
   ufs: string[];
   filiais?: boolean;
+  /** Importa só empresas cuja razão social ou nome fantasia contenha TODAS estas palavras (recorte pequeno, cabe no plano grátis). */
+  busca?: string;
+  /** Importa só estes CNPJs-raiz (os 8 primeiros dígitos), ou seja, todos os estabelecimentos da empresa ou do grupo. */
+  raizes?: string[];
   log?: (m: string) => void;
 }
 
@@ -51,11 +56,28 @@ export async function listarModelosDeFonte(c: DuckDBConnection, fonte: string) {
   return colunas(c, parquet(fonte, "estabelecimentos"));
 }
 
+const SEM_ACENTO = (col: string) => `lower(strip_accents(coalesce(${col}, '')))`;
+
+/** Condição SQL sobre a tabela de estabelecimentos para o recorte pedido (UFs, busca por nome, raízes de CNPJ). */
+export function filtroEstabelecimentos(o: Pick<OpcoesLeitura, "fonte" | "ufs" | "filiais" | "busca" | "raizes">): string {
+  const cond = ["situacao_cadastral = '02'"];
+  if (o.ufs.length) cond.push(`uf in (${o.ufs.map((u) => q(u.toUpperCase())).join(",")})`);
+  if (!o.filiais) cond.push("identificador_matriz_filial = '1'");
+  const raizes = (o.raizes ?? []).map((r) => r.replace(/\D/g, "")).filter(Boolean).map((r) => r.padStart(8, "0").slice(0, 8));
+  if (raizes.length) cond.push(`cnpj_basico in (${raizes.map(q).join(",")})`);
+  const palavras = normalizarBusca(o.busca ?? "").split(" ").filter((w) => w.length >= 2);
+  if (palavras.length) {
+    const todas = (col: string) => palavras.map((w) => `${SEM_ACENTO(col)} like ${q(`%${w}%`)}`).join(" and ");
+    const razao = `select cnpj_basico from ${parquet(o.fonte, "empresas")} where ${todas("razao_social")}`;
+    cond.push(`(cnpj_basico in (${razao}) or (${todas("nome_fantasia")}))`);
+  }
+  return cond.join(" and ");
+}
+
 /** Prepara as tabelas temporárias e devolve quantas linhas serão importadas. */
 export async function preparar(c: DuckDBConnection, o: OpcoesLeitura): Promise<number> {
   const log = o.log ?? (() => {});
-  const ufs = o.ufs.map((u) => q(u.toUpperCase())).join(",");
-  log("Filtrando estabelecimentos (UF, ativos)…");
+  log(`Filtrando estabelecimentos (ativos${o.ufs.length ? `, ${o.ufs.join("/")}` : ", todas as UFs"}${o.busca ? `, nome com "${o.busca}"` : ""}${o.raizes?.length ? `, ${o.raizes.length} CNPJ(s)-raiz` : ""})…`);
   await c.run(`
     create temp table est as
     select cnpj_basico || cnpj_ordem || cnpj_dv as cnpj, cnpj_basico, nome_fantasia,
@@ -63,7 +85,7 @@ export async function preparar(c: DuckDBConnection, o: OpcoesLeitura): Promise<n
            uf, municipio as cod_municipio, bairro, cep, correio_eletronico as email,
            nullif(coalesce(ddd1, '') || coalesce(telefone1, ''), '') as telefone, data_inicio_atividade
       from ${parquet(o.fonte, "estabelecimentos")}
-     where situacao_cadastral = '02' and uf in (${ufs}) ${o.filiais ? "" : "and identificador_matriz_filial = '1'"}`);
+     where ${filtroEstabelecimentos(o)}`);
   const n = Number((await c.runAndReadAll("select count(*) as n from est")).getRowObjectsJson()[0].n);
   log(`${n} estabelecimentos encontrados. Buscando razão social e porte…`);
 

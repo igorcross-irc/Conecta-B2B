@@ -5,6 +5,12 @@ on:
       ufs:
         description: "UFs separadas por vírgula (ex.: RJ ou RJ,SP)"
         default: "RJ"
+      busca:
+        description: "Opcional: só empresas com estas palavras no nome (ex.: padaria estrela). Recorte pequeno, cabe no plano grátis"
+        default: ""
+      raizes:
+        description: "Opcional: CNPJs-raiz (8 primeiros dígitos) separados por vírgula, em qualquer UF. Use com filiais=true"
+        default: ""
       mes:
         description: "Mês da base (AAAA-MM). Vazio = mês atual, ou o anterior se ainda não existir"
         default: ""
@@ -23,8 +29,17 @@ jobs:
       - name: Importar
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          UFS: ${{ inputs.ufs }}
+          BUSCA: ${{ inputs.busca }}
+          RAIZES: ${{ inputs.raizes }}
+          MES: ${{ inputs.mes }}
+          FILIAIS: ${{ inputs.filiais }}
         run: |
-          ARGS="--ufs=${{ inputs.ufs }}"
-          if [ -n "${{ inputs.mes }}" ]; then ARGS="$ARGS --mes=${{ inputs.mes }}"; fi
-          if [ "${{ inputs.filiais }}" = "true" ]; then ARGS="$ARGS --filiais"; fi
-          npx tsx scripts/importar-receita.ts $ARGS
+          # Entradas do formulário vão por variável de ambiente e em lista, nunca coladas no comando (evita injeção de comando).
+          args=()
+          [ -n "$UFS" ] && args+=("--ufs=$UFS")
+          [ -n "$RAIZES" ] && args+=("--raizes=$RAIZES")
+          [ -n "$MES" ] && args+=("--mes=$MES")
+          [ -n "$BUSCA" ] && args+=("--busca=$BUSCA")
+          [ "$FILIAIS" = "true" ] && args+=("--filiais")
+          npx tsx scripts/importar-receita.ts "${args[@]}"

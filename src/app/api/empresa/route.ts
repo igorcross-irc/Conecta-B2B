@@ -1,8 +1,6 @@
 import { contexto, responderErro } from "@/lib/app";
-import { criarLimite } from "@/lib/limite";
 
-// A busca por site faz o servidor visitar o endereço informado: limita por usuário.
-const limiteSite = criarLimite(30, 60 * 60 * 1000);
+// A busca por site faz o servidor visitar o endereço informado: limita por usuário (30 por hora, contado no banco).
 
 /**
  * GET /api/empresa?cnpj=33000167000101
@@ -16,7 +14,7 @@ export async function GET(req: Request) {
     const site = q.get("site") ?? "";
     const { sessao, servicos } = await contexto();
     if (!cnpj && site) {
-      if (!limiteSite.permitir(sessao.usuarioId)) {
+      if (!(await servicos.permitirPedido(`site:${sessao.usuarioId}`, 30, 3600))) {
         return Response.json({ erro: "Muitas buscas por site. Tente novamente mais tarde." }, { status: 429 });
       }
       return Response.json(await servicos.resolverSite(site));
