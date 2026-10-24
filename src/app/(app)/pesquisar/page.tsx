@@ -264,7 +264,10 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
                             {i.dominio && <Link href={empresaHref("site:" + i.dominio)} className="selo"><Externo width={12} height={12} className="mr-1" />{i.dominio}</Link>}
                           </div>
                         </div>
-                        <Link href={empresaHref(i.cnpj)} className="btn-sec shrink-0 sm:self-center">Abrir empresa</Link>
+                        <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:self-center">
+                          <Link href={empresaHref(i.cnpj)} className="btn-sec">Abrir empresa</Link>
+                          <Link href={`/parecidas?cnpj=${i.cnpj}`} className="text-center text-xs text-marca-700 underline">Empresas parecidas</Link>
+                        </div>
                       </li>
                     );
                   })}

@@ -62,6 +62,17 @@ export interface Mercado {
   /** Falso se a base da Receita ainda não foi carregada. */
   baseReceita: boolean;
 }
+export interface EmpresaParecida extends ItemPesquisa {
+  /** 0 a 100: o quanto se parece com a empresa de referência. */
+  semelhanca: number;
+  /** O que têm em comum, em palavras. */
+  iguais: string[];
+}
+export interface ResultadoParecidas {
+  referencia: { cnpj: string; razaoSocial: string; nomeFantasia?: string; municipio?: string; uf?: string; atividade?: string; porte?: string } | null;
+  itens: EmpresaParecida[];
+}
+
 /** Uma empresa em que a organização já trabalhou, com tudo o que foi colhido sobre ela. */
 export interface EmpresaTrabalhada {
   /** CNPJ (14 dígitos) ou "site:dominio". */

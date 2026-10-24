@@ -126,6 +126,22 @@ test.describe("mercado", () => {
   });
 });
 
+test.describe("empresas parecidas", () => {
+  test("lista as parecidas de uma empresa da base e avisa quando não a encontra", async ({ page }) => {
+    await page.goto("/pesquisar?uf=RJ");
+    await page.getByRole("link", { name: "Empresas parecidas" }).first().click();
+    await expect(page).toHaveURL(/\/parecidas\?cnpj=/);
+    await expect(page.getByText("Empresa de referência")).toBeVisible();
+    // da lista de parecidas abre-se a empresa na página única, e o voltar leva de volta à lista
+    await page.getByText("Empresa de referência").locator("xpath=following-sibling::a").click();
+    await expect(page).toHaveURL(/\/empresa\/\d{14}\?de=%2Fparecidas/);
+    await page.getByRole("link", { name: /← Voltar/ }).click();
+    await expect(page).toHaveURL(/\/parecidas\?cnpj=/);
+    await page.goto("/parecidas?cnpj=99999999999999");
+    await expect(page.getByText("Não encontrei essa empresa")).toBeVisible();
+  });
+});
+
 test.describe("descobrir decisores: clareza de quem é cada pessoa e dado", () => {
   test("ficha mostra o CNPJ inteiro, pessoas dizem de qual empresa e de onde vêm, e custos aparecem", async ({ page }) => {
     await page.goto("/empresa/33000167000101");

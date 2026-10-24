@@ -4,7 +4,7 @@ import { UFS } from "./ufs";
 import { limparFiltros, paraParametros, resumoFiltros, type FiltrosUrl } from "./filtrosUrl";
 import { ABERTURAS, PORTES, SETORES, faixasDeSetores } from "./setores";
 import { ErroDeNegocio } from "./servicos";
-import { Fatia, Linha, Mercado, PesquisaFiltros, PesquisaSalva, ResultadoPesquisa, UUID } from "./servicosPg.tipos";
+import { Fatia, Linha, Mercado, PesquisaFiltros, PesquisaSalva, ResultadoPesquisa, ResultadoParecidas, UUID } from "./servicosPg.tipos";
 import type { Ctx } from "./servicosPg.contexto";
 
 /** Monta a cláusula WHERE (sobre rf_estabelecimento apelidada de `e`) e os parâmetros a partir dos filtros da pesquisa; null se não há nenhum filtro. */
@@ -124,6 +124,57 @@ export function criarPesquisa(c: Ctx) {
           temTelefone: x.tem_telefone === true,
           matriz: x.matriz === true,
         })),
+      };
+    },
+    /**
+     * Empresas parecidas com uma de referência (da base da Receita): mesma atividade (exata ou do mesmo grupo), mesmo porte,
+     * mesma cidade ou estado e idade próxima. Só olha o mesmo setor e estado, para não varrer a base inteira.
+     * A nota é a soma de pontos (atividade 45 ou 25, porte 20, cidade 20 ou estado 10, idade 15); devolve as melhores.
+     */
+    async parecidas(cnpj: string, limite = 30): Promise<ResultadoParecidas> {
+      const digitos = cnpj.replace(/\D/g, "");
+      const ref = await um<Linha>(
+        `select e.cnpj, e.razao_social, e.nome_fantasia, e.municipio, e.uf, e.porte, e.cnae, e.aberta_em, c.descricao as atividade
+           from rf_estabelecimento e left join rf_cnae c on c.codigo = e.cnae where e.cnpj = $1`,
+        [digitos],
+      );
+      if (!ref || ref.cnae == null || !ref.uf) return { referencia: null, itens: [] };
+      const max = Math.min(100, Math.max(1, Math.floor(limite)));
+      const r = await db.query<Linha>(
+        `select * from (
+           select e.cnpj, e.razao_social, e.nome_fantasia, e.municipio, e.uf, e.bairro, e.porte, e.aberta_em, e.cnae, c.descricao as atividade,
+                  (e.email is not null) as tem_email, (e.telefone is not null) as tem_telefone,
+                  (case when e.cnae = $2 then 45 when e.cnae / 100 = $2 / 100 then 25 else 0 end)
+                  + (case when e.porte is not distinct from $3 then 20 else 0 end)
+                  + (case when e.municipio is not distinct from $4 then 20 else 10 end)
+                  + (case when e.aberta_em is not null and $5::date is not null and abs(extract(year from e.aberta_em) - extract(year from $5::date)) <= 3 then 15 else 0 end) as pontos
+             from rf_estabelecimento e left join rf_cnae c on c.codigo = e.cnae
+            where e.situacao = 'ATIVA' and e.matriz and e.cnpj <> $1 and e.uf = $6 and e.cnae / 100000 = $2 / 100000
+         ) t order by pontos desc, razao_social limit ${max}`,
+        [digitos, Number(ref.cnae), (ref.porte as string) ?? null, (ref.municipio as string) ?? null, ref.aberta_em ? new Date(ref.aberta_em as string).toISOString().slice(0, 10) : null, ref.uf],
+      );
+      const anoRef = ref.aberta_em ? new Date(ref.aberta_em as string).getUTCFullYear() : null;
+      return {
+        referencia: {
+          cnpj: String(ref.cnpj), razaoSocial: String(ref.razao_social), nomeFantasia: (ref.nome_fantasia as string) ?? undefined,
+          municipio: (ref.municipio as string) ?? undefined, uf: String(ref.uf), atividade: (ref.atividade as string) ?? undefined, porte: (ref.porte as string) ?? undefined,
+        },
+        itens: r.rows.map((x) => {
+          const aberta = x.aberta_em ? new Date(x.aberta_em as string).toISOString().slice(0, 10) : undefined;
+          const iguais = [
+            Number(x.cnae) === Number(ref.cnae) ? "mesma atividade" : Math.floor(Number(x.cnae) / 100) === Math.floor(Number(ref.cnae) / 100) ? "atividade do mesmo grupo" : "mesmo setor",
+            ...(x.porte && x.porte === ref.porte ? ["mesmo porte"] : []),
+            x.municipio && x.municipio === ref.municipio ? "mesma cidade" : "mesmo estado",
+            ...(aberta && anoRef !== null && Math.abs(Number(aberta.slice(0, 4)) - anoRef) <= 3 ? ["idade parecida"] : []),
+          ];
+          return {
+            cnpj: String(x.cnpj), razaoSocial: String(x.razao_social), nomeFantasia: (x.nome_fantasia as string) ?? undefined,
+            municipio: (x.municipio as string) ?? undefined, uf: (x.uf as string) ?? undefined, bairro: (x.bairro as string) ?? undefined,
+            atividade: (x.atividade as string) ?? undefined, porte: (x.porte as string) ?? undefined, abertaEm: aberta,
+            cnae: Number(x.cnae), temEmail: x.tem_email === true, temTelefone: x.tem_telefone === true, matriz: true,
+            semelhanca: Number(x.pontos), iguais,
+          };
+        }),
       };
     },
     /**

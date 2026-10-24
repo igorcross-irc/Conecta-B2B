@@ -850,6 +850,29 @@ describe("mercado (tamanho e visões)", () => {
   }, 30000);
 });
 
+describe("empresas parecidas", () => {
+  it("ordena por semelhança e só traz o mesmo setor e estado", async () => {
+    const { db, s } = await novo();
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, matriz, situacao, cnae, uf, municipio, porte, aberta_em, busca) values
+       ('33000167000101','Referencia',true,'ATIVA',1091101,'RJ','NITEROI','Micro empresa','2015-01-01','r'),
+       ('11222333000181','Gemea',true,'ATIVA',1091101,'RJ','NITEROI','Micro empresa','2016-06-01','g'),
+       ('00000000000191','OutraCidade',true,'ATIVA',1091101,'RJ','RIO DE JANEIRO','Demais','2000-01-01','o'),
+       ('11111111000191','MesmoGrupo',true,'ATIVA',1091102,'RJ','NITEROI','Micro empresa','2015-03-01','m'),
+       ('22222222000191','OutroEstado',true,'ATIVA',1091101,'SP','SAO PAULO','Micro empresa','2015-03-01','x'),
+       ('44444444000191','OutroSetor',true,'ATIVA',4711301,'RJ','NITEROI','Micro empresa','2015-03-01','s'),
+       ('55555555000191','Filial',false,'ATIVA',1091101,'RJ','NITEROI','Micro empresa','2015-03-01','f')`,
+    );
+    const r = await s.parecidas("33.000.167/0001-01");
+    expect(r.referencia?.razaoSocial).toBe("Referencia");
+    expect(r.itens.map((i) => i.razaoSocial)).toEqual(["Gemea", "MesmoGrupo", "OutraCidade"]);
+    expect(r.itens[0].semelhanca).toBe(100);
+    expect(r.itens[0].iguais).toEqual(["mesma atividade", "mesmo porte", "mesma cidade", "idade parecida"]);
+    expect(r.itens[1].iguais[0]).toBe("atividade do mesmo grupo");
+    expect((await s.parecidas("99999999999999")).referencia).toBeNull();
+  }, 30000);
+});
+
 describe("minhas empresas (consolidado por empresa)", () => {
   const OUTRA = "00000000-0000-0000-0000-0000000000e1";
   const contato = (db: PGlite, org: string, cnpj: string, nome: string, extra = "") =>

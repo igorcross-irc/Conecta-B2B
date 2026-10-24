@@ -2,7 +2,7 @@
 
 import { Abordagem } from "./Abordagem";
 import { Enriquecimento, useEnriquecimento } from "./Enriquecimento";
-import { Busca as IconeBusca, Email, Externo, Mapa, Pessoa, Relogio, Telefone } from "@/components/Icones";
+import { Busca as IconeBusca, Email, Externo, Mapa, Pessoa, Predio, Relogio, Telefone } from "@/components/Icones";
 import { useEffect, useRef, useState } from "react";
 import { DEPARTAMENTOS, SENIORIDADES, classificarCargo, pesoDoCargo } from "@/lib/cargos";
 import { descreverOrigem, nivelDeConfianca, type TomOrigem } from "@/lib/origem";
@@ -426,6 +426,9 @@ export default function Descobrir({ cnpjInicial = "", iaAtiva = false, custos = 
                       </ul>
                     </details>
                   )}
+                  <a className="btn-sec" href={`/parecidas?cnpj=${empresa.cnpj}`}>
+                    <Predio width={16} height={16} /> Empresas parecidas com esta
+                  </a>
                   {empresa.cnaePrincipal?.codigo && empresa.uf && (
                     <a className="btn-sec" href={`/pesquisar?segmento=${String(empresa.cnaePrincipal.codigo).slice(0, 5)}&uf=${empresa.uf}&cidade=${encodeURIComponent(empresa.municipio ?? "")}`}>
                       <IconeBusca width={16} height={16} /> Empresas do mesmo segmento em {empresa.municipio ?? empresa.uf}
