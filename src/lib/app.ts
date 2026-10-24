@@ -111,6 +111,11 @@ export async function pedirOptOutPublico(email: string): Promise<{ confirmacaoPo
   return { confirmacaoPorEmail: true };
 }
 
+/** Avisos diários das pesquisas salvas (chamado pelo cron). */
+export async function rodarAlertasPublico() {
+  return (await servicosPublicos()).rodarAlertas(enviarEmail, urlPublica());
+}
+
 export async function confirmarOptOutPublico(token: string) {
   return (await servicosPublicos()).confirmarOptOut(token);
 }

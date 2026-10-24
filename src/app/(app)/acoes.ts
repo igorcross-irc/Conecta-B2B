@@ -130,3 +130,24 @@ export async function testarIA(prompt: string): Promise<import("@/lib/ia/gemini"
   const { testarGemini } = await import("@/lib/ia/gemini");
   return testarGemini(prompt.slice(0, 500));
 }
+
+export async function salvarPesquisaAcao(d: FormData) {
+  const volta = `/pesquisar?${texto(d, "volta")}`;
+  const r = await executar(async () => {
+    let filtros: unknown = {};
+    try {
+      filtros = JSON.parse(texto(d, "filtros"));
+    } catch {
+      throw new ErroDeNegocio("Filtros inválidos.");
+    }
+    await (await contexto()).servicos.salvarPesquisa(texto(d, "nome"), filtros as never, d.get("avisar") === "1");
+  });
+  redirect(r.erro ? `${volta}&erro=${encodeURIComponent(r.erro)}` : `${volta}&salva=1`);
+}
+
+export async function removerPesquisaAcao(d: FormData) {
+  await executar(async () => {
+    await (await contexto()).servicos.removerPesquisa(texto(d, "id"));
+  });
+  redirect(`/pesquisar?${texto(d, "volta")}`);
+}

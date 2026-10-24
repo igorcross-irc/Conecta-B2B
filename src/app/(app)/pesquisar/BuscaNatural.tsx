@@ -2,22 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-
-interface Filtros {
-  nome?: string; termos?: string; uf?: string; cidade?: string; bairro?: string; segmento?: string;
-  setores?: string[]; porte?: string[]; abertura?: string; comEmail?: boolean; comTelefone?: boolean;
-}
-
-/** Converte o filtro interpretado pela IA nos parâmetros que a página de pesquisa já entende. */
-export function paraParametros(f: Filtros): string {
-  const q = new URLSearchParams();
-  for (const c of ["nome", "termos", "uf", "cidade", "bairro", "segmento", "abertura"] as const) if (f[c]) q.set(c, f[c]!);
-  for (const x of f.setores ?? []) q.append("setor", x);
-  for (const x of f.porte ?? []) q.append("porte", x);
-  if (f.comEmail) q.set("email", "1");
-  if (f.comTelefone) q.set("telefone", "1");
-  return q.toString();
-}
+import { paraParametros } from "@/lib/filtrosUrl";
 
 export function BuscaNatural() {
   const router = useRouter();

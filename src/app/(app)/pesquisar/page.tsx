@@ -3,6 +3,9 @@ import { connection } from "next/server";
 import { contexto } from "@/lib/app";
 import { chaveGemini } from "@/lib/ia/gemini";
 import { BuscaNatural } from "./BuscaNatural";
+import { paraParametros, resumoFiltros } from "@/lib/filtrosUrl";
+import { removerPesquisaAcao, salvarPesquisaAcao } from "../acoes";
+import { emailConfigurado } from "@/lib/email";
 import { ABERTURAS, PORTES, SETORES } from "@/lib/setores";
 
 export const metadata = { title: "Pesquisar" };
@@ -21,10 +24,13 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
   const abertura = typeof sp.abertura === "string" && ABERTURAS.some((x) => x.id === sp.abertura) ? (sp.abertura as string) : "";
   const comEmail = sp.email === "1";
   const comTelefone = sp.telefone === "1";
-  const ordem = sp.ordem === "recentes" ? "recentes" : "nome";
+  const ordem: "nome" | "recentes" = sp.ordem === "recentes" ? "recentes" : "nome";
   const pagina = Math.max(0, Number(typeof sp.pagina === "string" ? sp.pagina : 0) || 0);
   const filiais = sp.filiais === "1";
   const { servicos } = await contexto();
+  const salvas = await servicos.pesquisasSalvas();
+  const erro = typeof sp.erro === "string" ? sp.erro : "";
+  const salva = sp.salva === "1";
   const r = await servicos.pesquisar({ ...v, setores, porte: portes, abertura: abertura || undefined, comEmail, comTelefone, ordem, incluirFiliais: filiais, pagina });
   const buscou = CAMPOS.some((c) => v[c]) || setores.length > 0 || portes.length > 0 || Boolean(abertura) || comEmail || comTelefone;
   const qs = (extra: Record<string, string>) => {
@@ -40,6 +46,8 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
     for (const [k, val] of Object.entries(extra)) q.set(k, val);
     return "?" + q.toString();
   };
+  const filtrosAtuais = { ...Object.fromEntries(CAMPOS.filter((c) => v[c]).map((c) => [c, v[c]])), setores, porte: portes, abertura: abertura || undefined, comEmail, comTelefone, ordem, incluirFiliais: filiais };
+  const paramsAtuais = paraParametros(filtrosAtuais);
   return (
     <div className="space-y-6">
       <header>
@@ -83,6 +91,41 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="filiais" value="1" defaultChecked={filiais} /> Incluir filiais (padrão: só matrizes)</label>
         <button className="btn md:col-span-3 md:justify-self-end">Pesquisar</button>
       </form>
+
+      {erro && <p role="alert" className="aviso-erro">{erro}</p>}
+      {salva && <p className="aviso-ok">Pesquisa salva.</p>}
+
+      {buscou && (
+        <form action={salvarPesquisaAcao} className="cartao flex flex-col gap-2 text-sm sm:flex-row sm:items-center">
+          <input type="hidden" name="filtros" value={JSON.stringify(filtrosAtuais)} />
+          <input type="hidden" name="volta" value={paramsAtuais} />
+          <input name="nome" required maxLength={80} placeholder="Nome para salvar esta pesquisa" className="campo flex-1" aria-label="Nome da pesquisa" />
+          <label className="flex items-center gap-2"><input type="checkbox" name="avisar" value="1" defaultChecked /> Avisar por e-mail quando houver empresas novas</label>
+          <button className="btn">Salvar pesquisa</button>
+        </form>
+      )}
+
+      {salvas.length > 0 && (
+        <section className="cartao space-y-2">
+          <h2 className="font-medium">Pesquisas salvas</h2>
+          {!emailConfigurado() && <p className="text-xs text-slate-500">O envio de e-mail ainda não está configurado: os avisos só começam depois que o operador configurar o Resend.</p>}
+          <ul className="divide-y divide-slate-100 text-sm">
+            {salvas.map((p) => (
+              <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <span>
+                  <Link className="font-medium text-marca-700 hover:underline" href={`/pesquisar?${paraParametros(p.filtros)}`}>{p.nome}</Link>
+                  <span className="block text-xs text-slate-500">{resumoFiltros(p.filtros)} · {p.avisar ? `aviso ligado (último ${p.ultimoAviso})` : "sem aviso"}</span>
+                </span>
+                <form action={removerPesquisaAcao}>
+                  <input type="hidden" name="id" value={p.id} />
+                  <input type="hidden" name="volta" value={paramsAtuais} />
+                  <button className="text-xs text-slate-500 underline">Remover</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {buscou && !r.baseReceita && (
         <p className="cartao border-amber-300 bg-amber-50 text-sm">

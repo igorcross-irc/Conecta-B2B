@@ -571,3 +571,62 @@ describe("opt-out com confirmação e limite de pedidos", () => {
     expect(await s.permitirPedido("ip:1", 2, 3600)).toBe(true);
   });
 });
+
+describe("pesquisas salvas e avisos", () => {
+  async function comBase() {
+    const ctx = await novo();
+    await ctx.db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, nome_fantasia, matriz, situacao, cnae, uf, municipio, aberta_em, busca) values
+       ('33000167000101','PADARIA NOVA','Pão Novo',true,'ATIVA',1091102,'RJ','Niterói', current_date - interval '1 day','padaria nova pao novo'),
+       ('11222333000181','PADARIA VELHA','Pão Velho',true,'ATIVA',1091102,'RJ','Niterói', current_date - interval '5 years','padaria velha pao velho'),
+       ('00000000000191','PADARIA SP','Pão SP',true,'ATIVA',1091102,'SP','Santos', current_date - interval '1 day','padaria sp pao sp')`,
+    );
+    return ctx;
+  }
+
+  it("salva, lista e remove; recusa nome vazio e pesquisa sem filtro", async () => {
+    const { s } = await novo();
+    await expect(s.salvarPesquisa("", { uf: "RJ" })).rejects.toThrow(/nome/i);
+    await expect(s.salvarPesquisa("vazia", {})).rejects.toThrow(/filtro/i);
+    const id = await s.salvarPesquisa("Padarias RJ", { uf: "RJ", termos: "padaria", lixo: "x" } as never);
+    const [p] = await s.pesquisasSalvas();
+    expect(p).toMatchObject({ id, nome: "Padarias RJ", filtros: { uf: "RJ", termos: "padaria" }, avisar: true });
+    expect(p.filtros).not.toHaveProperty("lixo");
+    await s.removerPesquisa(id);
+    expect(await s.pesquisasSalvas()).toEqual([]);
+  });
+
+  it("avisa só das empresas abertas desde o último aviso e não repete no mesmo dia", async () => {
+    const { db, s } = await comBase();
+    await s.salvarPesquisa("Padarias RJ", { uf: "RJ", termos: "padaria" });
+    await db.query("update pesquisa_salva set ultimo_aviso = current_date - 3");
+    const enviados: { para: string; assunto: string; texto: string }[] = [];
+    const r = await s.rodarAlertas(async (m) => void enviados.push(m), "https://app.exemplo");
+    expect(r).toEqual({ avaliadas: 1, enviadas: 1, falhas: 0 });
+    expect(enviados[0].para).toBe("demo@conecta-b2b.invalid");
+    expect(enviados[0].assunto).toMatch(/1 empresa\(s\) nova\(s\)/);
+    expect(enviados[0].texto).toContain("Pão Novo");
+    expect(enviados[0].texto).not.toContain("Pão Velho");
+    expect(enviados[0].texto).not.toContain("Pão SP");
+    expect(enviados[0].texto).toContain("https://app.exemplo/descobrir?alvo=33000167000101");
+    expect(await s.rodarAlertas(async () => {}, "https://app.exemplo")).toEqual({ avaliadas: 0, enviadas: 0, falhas: 0 });
+  });
+
+  it("falha de envio não consome o aviso: tenta de novo na próxima rodada", async () => {
+    const { db, s } = await comBase();
+    await s.salvarPesquisa("Padarias RJ", { uf: "RJ" });
+    await db.query("update pesquisa_salva set ultimo_aviso = current_date - 3");
+    const r1 = await s.rodarAlertas(async () => { throw new Error("fora do ar"); }, "https://x");
+    expect(r1).toMatchObject({ enviadas: 0, falhas: 1 });
+    const r2 = await s.rodarAlertas(async () => {}, "https://x");
+    expect(r2).toMatchObject({ enviadas: 1, falhas: 0 });
+  });
+
+  it("sem empresa nova, não envia, mas marca o dia", async () => {
+    const { db, s } = await comBase();
+    await s.salvarPesquisa("Só Santos antigas", { uf: "SP", cidade: "Santos", porte: ["Demais"] });
+    await db.query("update pesquisa_salva set ultimo_aviso = current_date - 3");
+    expect(await s.rodarAlertas(async () => { throw new Error("não devia enviar"); }, "https://x")).toEqual({ avaliadas: 1, enviadas: 0, falhas: 0 });
+    expect((await db.query("select ultimo_aviso = current_date as hoje from pesquisa_salva")).rows[0]).toEqual({ hoje: true });
+  });
+});
