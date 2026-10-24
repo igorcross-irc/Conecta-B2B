@@ -57,7 +57,7 @@ describe("SociosReceita", () => {
         { nome: "PEDRO", qualificacao: "Contador" },
       ] }),
     });
-    expect(c.map((x) => x.nome)).toEqual(["MARIA"]);
+    expect(c.map((x) => x.nome)).toEqual(["Maria"]);
     expect(c[0].origem).toMatch(/QSA/);
     expect(c[0].email).toBeUndefined();
   });

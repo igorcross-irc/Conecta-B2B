@@ -1,3 +1,4 @@
+import { formatarNome, pareceEmpresa } from "../pessoas";
 import type { Contato, EntradaBuscaContatos, ProvedorContatos } from "./types";
 
 /** Qualificações do QSA que indicam quem decide na empresa. */
@@ -19,9 +20,10 @@ export class SociosReceita implements ProvedorContatos {
 
   async buscar({ empresa }: EntradaBuscaContatos): Promise<Contato[]> {
     return empresa.socios
-      .filter((s) => s.nome && !s.nome.includes("[MASKED]") && DECISORES.test(s.qualificacao))
+      // Sócio que é empresa (holding, fundo, S.A.) não é uma pessoa para abordar: fica só na lista de sócios.
+      .filter((s) => s.nome && !s.nome.includes("[MASKED]") && !s.pessoaJuridica && !pareceEmpresa(s.nome) && !/jur[ií]dica/i.test(s.qualificacao) && DECISORES.test(s.qualificacao))
       .map((s) => ({
-        nome: s.nome,
+        nome: formatarNome(s.nome),
         cargo: s.qualificacao,
         senioridade: senioridade(s.qualificacao),
         origem: `${empresa.fonte} — QSA`,
