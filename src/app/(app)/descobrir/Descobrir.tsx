@@ -61,6 +61,7 @@ const ROTULO_STATUS: Record<string, string> = {
   verificado: "verificado",
   nao_verificado: "não verificado",
   inferido: "inferido",
+  dominio_ok: "domínio recebe e-mail",
 };
 
 async function chamar<T>(url: string, corpo?: unknown): Promise<T> {

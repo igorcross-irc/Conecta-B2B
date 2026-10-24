@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BrasilApi, EmpresaEmCascata, mapearBrasilApi } from "./brasilapi";
+import { BrasilApi, EmpresaEmCascata, mapearBrasilApi, minhaReceita } from "./brasilapi";
 import { CnpjaAberta } from "./cnpja";
 
 /**
@@ -50,5 +50,15 @@ describe("cascata com as duas respostas reais", () => {
     expect(e!.dominio).toBe("petrobras.com.br");
     expect(e!.simples).toBe(false);
     expect(e!.socios.every((s) => !/masked/i.test(s.nome))).toBe(true);
+  });
+});
+
+describe("Minha Receita (mesmo formato da BrasilAPI)", () => {
+  it("lê a resposta real da BrasilAPI pelo mesmo mapeador e usa o endereço próprio", async () => {
+    let visto = "";
+    const http = (async (u: string) => { visto = u; return new Response(lerFixture("brasilapi-petrobras.json")); }) as unknown as typeof fetch;
+    const e = await minhaReceita(http).buscarPorCnpj(CNPJ);
+    expect(visto).toBe(`https://minhareceita.org/${CNPJ}`);
+    expect(e).toMatchObject({ cnpj: CNPJ, uf: "RJ" });
   });
 });

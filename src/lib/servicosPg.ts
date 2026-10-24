@@ -5,6 +5,8 @@ import { TABELA_CUSTOS_PADRAO, type Lancamento, type TabelaCustos } from "./cred
 import { alvoValido, chaveAlvo, normalizarBusca, somenteDigitos } from "./cnpj";
 import { lerCsv, normalizarCabecalho } from "./csv";
 import { ORG_DEMO, USUARIO_DEMO } from "@/db/local";
+import { enriquecer as enriquecerEmpresa, type Enriquecimento } from "./enriquecimento";
+import { verificarDominiosDeEmail } from "./providers/mx";
 import { dominioSeguro } from "./providers/site";
 import type { Contato, Empresa, ProvedorContatos, ProvedorEmpresa } from "./providers/types";
 import { VERSAO_EMPRESA } from "./providers/types";
@@ -307,11 +309,14 @@ export function criarServicosPg({
       return { contatos: juntar(cache.contatos.filter(naoSaiu)), tentativas: cache.tentativas, doPool: true };
     }
 
-    const { contatos, tentativas } = await buscarEmCascata(
+    const cascata = await buscarEmCascata(
       provedores,
       { empresa, cargos },
       { optOut: (c) => !naoSaiu(c), progresso },
     );
+    const tentativas = cascata.tentativas;
+    // Descarta e-mail de domínio que não recebe mensagens e marca os demais (checagem gratuita por MX).
+    const contatos = await verificarDominiosDeEmail(cascata.contatos);
     const todasFalharam = tentativas.length > 0 && tentativas.every((t) => t.erro);
     if (!todasFalharam) {
       await db.query(
@@ -977,6 +982,13 @@ export function criarServicosPg({
       // Mudou o site: as varreduras guardadas usaram o site antigo, então são descartadas.
       if ((antes?.dominio ?? null) !== dominio) await db.query("delete from pool_busca where cnpj = $1", [d]);
       await auditar("base.empresa", d, { dominio, nota, tags });
+    },
+
+    /** Informações extras da empresa (CVM, Wikidata, notícias, sanções), cada fonte com cache e falha próprias. */
+    async enriquecer(cnpj: string): Promise<Enriquecimento> {
+      if (!alvoValido(cnpj)) throw new ErroDeNegocio("CNPJ ou site inválido.");
+      const e = await servicos.consultarEmpresa(cnpj);
+      return enriquecerEmpresa(db, { cnpj: chaveAlvo(cnpj), razaoSocial: e.razaoSocial, nomeFantasia: e.nomeFantasia, dominio: e.dominio });
     },
 
     // ───────────── Chaves de API ─────────────

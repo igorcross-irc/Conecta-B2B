@@ -1,9 +1,10 @@
 import { cache } from "react";
 import { abrirBanco, type Banco } from "@/db/conexao";
-import { BrasilApi, EmpresaEmCascata } from "./providers/brasilapi";
+import { BrasilApi, EmpresaEmCascata, minhaReceita } from "./providers/brasilapi";
 import { CnpjaAberta } from "./providers/cnpja";
 import { SiteEmpresa } from "./providers/site";
 import { SociosReceita } from "./providers/socios";
+import { CvmRelacoesInvestidores } from "./providers/cvmri";
 import { Hunter } from "./providers/hunter";
 import { BuscaWebPessoas } from "./providers/buscaweb";
 import { chaveGemini } from "./ia/gemini";
@@ -35,9 +36,10 @@ function provedores() {
   }
   const site = new SiteEmpresa();
   return {
-    empresa: new EmpresaEmCascata([new BrasilApi(), new CnpjaAberta()]),
+    empresa: new EmpresaEmCascata([new BrasilApi(), minhaReceita(), new CnpjaAberta()]),
     contatos: [
       new SociosReceita(),
+      new CvmRelacoesInvestidores(),
       site,
       // Fontes extras entram quando a chave existe no ambiente (Vercel → Settings → Environment Variables).
       ...(process.env.HUNTER_API_KEY ? [new Hunter(process.env.HUNTER_API_KEY)] : []),

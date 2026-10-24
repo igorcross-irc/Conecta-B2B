@@ -97,13 +97,20 @@ export function mapearBrasilApi(r: RespostaBrasilApi, agora = new Date()): Empre
 }
 
 export class BrasilApi implements ProvedorEmpresa {
-  nome = "BrasilAPI (Receita Federal)";
+  nome: string;
 
-  constructor(private http: typeof fetch = fetch) {}
+  /** A Minha Receita (minhareceita.org, projeto aberto) devolve o mesmo formato, então reaproveita este leitor. */
+  constructor(
+    private http: typeof fetch = fetch,
+    private base: string = URL_BASE,
+    nome = "BrasilAPI (Receita Federal)",
+  ) {
+    this.nome = nome;
+  }
 
   async buscarPorCnpj(cnpj: string): Promise<Empresa | null> {
     if (!cnpjValido(cnpj)) throw new Error("CNPJ inválido.");
-    const res = await this.http(`${URL_BASE}/${somenteDigitos(cnpj)}`, {
+    const res = await this.http(`${this.base}/${somenteDigitos(cnpj)}`, {
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
@@ -152,3 +159,6 @@ export class EmpresaEmCascata implements ProvedorEmpresa {
     return base;
   }
 }
+
+/** Segunda fonte da Receita (mesmo formato da BrasilAPI), para o caso de uma das duas estar fora ou no limite. */
+export const minhaReceita = (http: typeof fetch = fetch) => new BrasilApi(http, "https://minhareceita.org", "Minha Receita");
