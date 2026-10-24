@@ -14,6 +14,8 @@ export default async function Parecidas({ searchParams }: PageProps<"/parecidas"
   const { servicos } = await contexto();
   const r = cnpj.length === 14 ? await servicos.parecidas(cnpj, 50) : { referencia: null, itens: [] };
 
+  const voltaPara = (alvo: string) => `/empresa/${alvo}?de=${encodeURIComponent(`/parecidas?cnpj=${cnpj}`)}`;
+
   return (
     <div className="space-y-5">
       <header>
@@ -32,7 +34,7 @@ export default async function Parecidas({ searchParams }: PageProps<"/parecidas"
         <>
           <section className="cartao-destaque space-y-1">
             <p className="text-xs font-semibold uppercase tracking-wide text-marca-700">Empresa de referência</p>
-            <Link href={`/descobrir?alvo=${r.referencia.cnpj}`} className="block text-lg font-semibold text-marca-800 hover:underline">{r.referencia.nomeFantasia || r.referencia.razaoSocial}</Link>
+            <Link href={voltaPara(r.referencia.cnpj)} className="block text-lg font-semibold text-marca-800 hover:underline">{r.referencia.nomeFantasia || r.referencia.razaoSocial}</Link>
             <p className="text-sm text-slate-600">{[r.referencia.municipio, r.referencia.uf].filter(Boolean).join("/")}{r.referencia.porte ? ` · ${r.referencia.porte}` : ""}{r.referencia.atividade ? ` · ${r.referencia.atividade}` : ""}</p>
           </section>
 
@@ -47,7 +49,7 @@ export default async function Parecidas({ searchParams }: PageProps<"/parecidas"
                     <span className="h-1.5 w-24 rounded-full bg-slate-100 sm:w-full" aria-hidden><span className="block h-1.5 rounded-full bg-marca-600" style={{ width: `${i.semelhanca}%` }} /></span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <Link href={`/descobrir?alvo=${i.cnpj}`} className="block truncate font-semibold text-marca-800 hover:underline">{i.nomeFantasia || i.razaoSocial}</Link>
+                    <Link href={voltaPara(i.cnpj)} className="block truncate font-semibold text-marca-800 hover:underline">{i.nomeFantasia || i.razaoSocial}</Link>
                     <p className="truncate text-xs text-slate-500">{i.razaoSocial} · {fmt(i.cnpj)}</p>
                     <p className="mt-1 truncate text-sm text-slate-600">{[i.bairro, i.municipio, i.uf].filter(Boolean).join(" · ")}{i.atividade ? ` — ${i.atividade}` : ""}</p>
                     <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
@@ -55,7 +57,7 @@ export default async function Parecidas({ searchParams }: PageProps<"/parecidas"
                       {i.porte && <span className="selo-cinza">{i.porte}</span>}
                     </div>
                   </div>
-                  <Link href={`/descobrir?alvo=${i.cnpj}`} className="btn-sec shrink-0 sm:self-center">Ver decisores</Link>
+                  <Link href={voltaPara(i.cnpj)} className="btn-sec shrink-0 sm:self-center">Abrir empresa</Link>
                 </li>
               ))}
             </ul>

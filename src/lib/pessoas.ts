@@ -17,6 +17,43 @@ export function chaveDaPessoa(nome: string): string | null {
   return `${t[0]} ${t[t.length - 1]}`;
 }
 
+/**
+ * Duas grafias são da mesma pessoa quando primeiro e último nome batem e os nomes do meio não se contradizem
+ * ("João Pedro Silva" e "João Paulo Silva" são pessoas diferentes; "João Silva" e "João Pedro Silva" podem ser a mesma).
+ * Uma inicial ("João P. Silva") combina com o nome do meio que começa por ela.
+ */
+export function mesmaPessoa(a: string, b: string): boolean {
+  const ta = tokensDoNome(a);
+  const tb = tokensDoNome(b);
+  if (ta.length < 2 || tb.length < 2) return false;
+  if (ta[0] !== tb[0] || ta[ta.length - 1] !== tb[tb.length - 1]) return false;
+  const [curto, longo] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  const meioLongo = longo.slice(1, -1);
+  return curto.slice(1, -1).every((m) => meioLongo.some((l) => l === m || (m.length === 1 && l.startsWith(m)) || (l.length === 1 && m.startsWith(l))));
+}
+
+const PALAVRAS_DE_EMPRESA = new Set([
+  "ltda", "eireli", "epp", "holding", "participacoes", "administracao", "administradora", "fundo", "fundacao", "associacao", "cooperativa",
+  "empreendimentos", "investimentos", "incorporadora", "companhia", "sociedade", "instituto", "banco", "comercio", "industria", "servicos", "cia", "seguradora", "consorcio",
+]);
+
+/** Verdadeiro quando o nome parece de empresa (sócio pessoa jurídica) e não de pessoa. */
+export function pareceEmpresa(nome: string): boolean {
+  if (/\bS\.?\/?A\.?(\s|$)/.test(nome) || /\d{3,}/.test(nome)) return true; // S.A., S/A (maiúsculo: "SÁ" é sobrenome) ou número
+  return tokensDoNome(nome).some((t) => PALAVRAS_DE_EMPRESA.has(t));
+}
+
+/** "MARIA DA SILVA" -> "Maria da Silva". Nomes que já têm minúsculas ficam como estão. */
+export function formatarNome(nome: string): string {
+  const n = nome.trim().replace(/\s+/g, " ");
+  if (n !== n.toUpperCase()) return n;
+  return n
+    .toLowerCase()
+    .split(" ")
+    .map((p, i) => (i > 0 && PARTICULAS.has(p.normalize("NFD").replace(/[̀-ͯ]/g, "")) && !/^(jr|junior|filho|neto)$/.test(p) ? p : p.charAt(0).toUpperCase() + p.slice(1)))
+    .join(" ");
+}
+
 const GENERICO = /^(caixa|contato|comercial|vendas|marketing|financeiro|rh|atendimento|sac|ouvidoria|imprensa|compras)\b/i;
 
 /**
@@ -24,14 +61,14 @@ const GENERICO = /^(caixa|contato|comercial|vendas|marketing|financeiro|rh|atend
  * soma dados que faltam (e-mail, telefone, LinkedIn) e sobe a confiança quando duas fontes diferentes concordam.
  */
 export function unirPessoas(contatos: Contato[]): Contato[] {
-  const grupos = new Map<string, Contato[]>();
+  const grupos: Contato[][] = [];
   const avulsos: Contato[] = [];
   for (const c of contatos) {
-    const k = GENERICO.test(c.nome) ? null : chaveDaPessoa(c.nome);
-    if (!k) { avulsos.push(c); continue; }
-    grupos.set(k, [...(grupos.get(k) ?? []), c]);
+    if (GENERICO.test(c.nome) || tokensDoNome(c.nome).length < 2) { avulsos.push(c); continue; }
+    const g = grupos.find((x) => x.some((y) => mesmaPessoa(y.nome, c.nome)));
+    if (g) g.push(c); else grupos.push([c]);
   }
-  const unidos = [...grupos.values()].map((g) => {
+  const unidos = grupos.map((g) => {
     if (g.length === 1) return g[0];
     const base = [...g].sort((a, b) => b.confianca - a.confianca)[0];
     const especifico = g.find((c) => !/pessoa citada/i.test(c.cargo)) ?? base;
@@ -39,7 +76,7 @@ export function unirPessoas(contatos: Contato[]): Contato[] {
     const fontes = new Set(g.map((c) => c.origem.split(" — ")[0].split(" (")[0])).size;
     return {
       ...base,
-      nome: g.reduce((m, c) => (c.nome.length > m.length && !/[a-z]\s[a-z]$/.test(c.nome) ? c.nome : m), base.nome),
+      nome: formatarNome(g.reduce((m, c) => (tokensDoNome(c.nome).length > tokensDoNome(m).length ? c.nome : m), base.nome)),
       cargo: especifico.cargo,
       senioridade: base.senioridade ?? g.find((c) => c.senioridade)?.senioridade,
       departamento: base.departamento ?? g.find((c) => c.departamento)?.departamento,

@@ -15,6 +15,11 @@ export async function POST(req: Request) {
     try {
       return Response.json({ filtros: await medir("Gemini: busca em linguagem natural", "ia", () => interpretarBusca(texto ?? ""), registrarFonte, () => 1) });
     } catch (e) {
+      // IA fora do ar: um texto curto (provavelmente um nome de empresa) vira busca por nome, em vez de travar a pessoa.
+      const curto = (texto ?? "").trim();
+      if (chaveGemini() && curto.length >= 2 && curto.length <= 60) {
+        return Response.json({ filtros: { nome: curto }, aviso: "A IA está indisponível agora; busquei pelo nome. Use os filtros para refinar." });
+      }
       throw new ErroDeNegocio(e instanceof Error ? e.message : "A IA não respondeu.", chaveGemini() ? 502 : 503);
     }
   } catch (e) {

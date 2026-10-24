@@ -116,10 +116,8 @@ export function FiltrosPesquisa({ valores, ativos }: { valores: ValoresFiltro; a
           {valores.termos && <input type="hidden" name="termos" value={valores.termos} />}
 
           <Grupo titulo="Empresa">
-            <label className="block text-sm">
-              <span className="rotulo">Nome ou palavra-chave</span>
-              <input name="nome" defaultValue={valores.nome} placeholder="Ex.: Atacadão, padaria" className="input mt-1" autoComplete="off" />
-            </label>
+            {/* O nome é digitado na caixa de busca do topo; aqui só acompanha os filtros. */}
+            <input type="hidden" name="nome" value={valores.nome} />
             <label className="block text-sm">
               <span className="rotulo">Atividade (CNAE)</span>
               <input name="segmento" value={segmento} onChange={(e) => setSegmento(e.target.value)} list="sug-atividades" placeholder="Ex.: comércio atacadista" className="input mt-1" autoComplete="off" />

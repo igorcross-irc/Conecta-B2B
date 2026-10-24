@@ -5,6 +5,8 @@ export interface Socio {
   qualificacao: string;
   /** Data de entrada na sociedade (AAAA-MM-DD), quando a fonte informa. */
   desde?: string;
+  /** Sócio que é empresa (holding, fundo...), segundo a fonte. Não é pessoa para abordar. */
+  pessoaJuridica?: boolean;
 }
 
 export interface Endereco {

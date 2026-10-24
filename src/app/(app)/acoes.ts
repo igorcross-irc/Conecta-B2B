@@ -35,7 +35,7 @@ export async function trocarOrganizacao(dados: FormData) {
   if (sessao.orgs.some((o) => o.id === id)) {
     (await cookies()).set(COOKIE_ORG, id, { path: "/", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 24 * 365 });
   }
-  redirect("/descobrir");
+  redirect("/pesquisar");
 }
 
 export async function renomearOrganizacao(_: Resultado, d: FormData): Promise<Resultado> {
@@ -116,7 +116,7 @@ export async function aceitarConvite(d: FormData) {
     (await cookies()).set(COOKIE_ORG, orgId, { path: "/", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 24 * 365 });
   });
   if (r.erro) redirect(`/convite/${texto(d, "token")}?erro=${encodeURIComponent(r.erro)}`);
-  redirect("/descobrir");
+  redirect("/pesquisar");
 }
 
 export async function recarregar(_: Resultado, d: FormData): Promise<Resultado> {

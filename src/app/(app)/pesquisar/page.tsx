@@ -1,5 +1,6 @@
 import { ROTULO_DIMENSAO, type Dimensao } from "@/lib/aderencia";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { contexto } from "@/lib/app";
 import { emailConfigurado } from "@/lib/email";
@@ -56,10 +57,25 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
   });
   const buscou = Object.keys(filtros).filter((k) => k !== "ordem").length > 0;
 
+  // Uma caixa só: se o que foi digitado é um CNPJ ou um site (e nada mais foi filtrado), abre a empresa direto.
+  if (v.nome && Object.keys(filtros).every((k) => k === "nome" || k === "ordem")) {
+    const digitos = v.nome.replace(/\D/g, "");
+    if (digitos.length === 14 && !/[a-zA-Z]/.test(v.nome)) redirect(`/empresa/${digitos}`);
+    const dominio = v.nome.trim().toLowerCase().replace(/^site:/, "").replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/[/?#].*$/, "");
+    if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(dominio)) redirect(`/empresa/${encodeURIComponent(`site:${dominio}`)}`);
+  }
+  // Endereço desta mesma pesquisa (com a página), para o botão "voltar" da página da empresa.
+  const aqui = (() => {
+    const q = new URLSearchParams();
+    for (const [c, val] of Object.entries(sp)) for (const x of Array.isArray(val) ? val : val === undefined ? [] : [val]) if (c !== "erro" && c !== "salva" && c !== "aviso") q.append(c, x);
+    return `/pesquisar${q.toString() ? `?${q}` : ""}`;
+  })();
+  const empresaHref = (alvo: string) => `/empresa/${encodeURIComponent(alvo)}?de=${encodeURIComponent(aqui)}`;
+
   // Filtros ativos como chips: cada um leva à mesma pesquisa sem aquele filtro.
   const semEsse = (k: string, valor?: string) => {
     const q = new URLSearchParams();
-    for (const [c, val] of Object.entries(sp)) for (const x of Array.isArray(val) ? val : val === undefined ? [] : [val]) if (!(c === k && (valor === undefined || x === valor)) && c !== "pagina" && c !== "erro" && c !== "salva") q.append(c, x);
+    for (const [c, val] of Object.entries(sp)) for (const x of Array.isArray(val) ? val : val === undefined ? [] : [val]) if (!(c === k && (valor === undefined || x === valor)) && c !== "pagina" && c !== "erro" && c !== "salva" && c !== "aviso") q.append(c, x);
     return `/pesquisar${q.toString() ? `?${q}` : ""}`;
   };
   const chips: { rotulo: string; href: string }[] = [
@@ -86,8 +102,6 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
 
   const ufsBase = cobertura.map((c) => c.uf);
   const ufForaDaBase = v.uf && ufsBase.length > 0 && !ufsBase.includes(v.uf);
-  const soDigitos = v.nome.replace(/\D/g, "");
-  const pareceCnpj = soDigitos.length === 14 && !/[a-zA-Z]/.test(v.nome);
   const paramsAtuais = paraParametros(filtros);
   const href = (extra: Record<string, string>) => {
     const q = new URLSearchParams(paramsAtuais);
@@ -102,14 +116,21 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
       <header className="cabecalho-pagina">
         <div>
           <h1 className="titulo-pagina">Pesquisar empresas</h1>
-          <p className="sub-pagina">Filtre a base da Receita por atividade, local, porte e idade. Abra uma empresa para ver os decisores.</p>
+          <p className="sub-pagina">Busque por nome, CNPJ ou site, ou filtre a base da Receita por atividade, local, porte e idade. Clique numa empresa para ver tudo sobre ela e os decisores.</p>
           {cobertura.length > 0 && (
             <p className="mt-1 text-xs text-slate-500">
-              Base carregada: {cobertura.map((c) => `${c.uf} (${c.empresas.toLocaleString("pt-BR")} empresas)`).join(", ")}. Para outros estados, abra a empresa direto pelo CNPJ em <Link href="/descobrir" className="text-marca-700 underline">Descobrir</Link>.
+              Base carregada: {cobertura.map((c) => `${c.uf} (${c.empresas.toLocaleString("pt-BR")} empresas)`).join(", ")}. Para outros estados, digite o CNPJ na caixa de busca acima: a empresa abre direto.
             </p>
           )}
         </div>
       </header>
+
+      <form action="/pesquisar" role="search" className="cartao flex flex-col gap-2 sm:flex-row">
+        {Object.entries(sp).flatMap(([c, val]) => (c === "nome" || c === "pagina" || c === "erro" || c === "salva" || c === "aviso" ? [] : (Array.isArray(val) ? val : val === undefined ? [] : [val]).map((x, i) => <input key={`${c}${i}`} type="hidden" name={c} value={x} />)))}
+        <label htmlFor="busca-unica" className="sr-only">Nome da empresa, CNPJ ou site</label>
+        <input id="busca-unica" name="nome" defaultValue={v.nome} placeholder="Nome, CNPJ ou site" className="input flex-1" autoComplete="off" />
+        <button className="btn-primario">Buscar</button>
+      </form>
 
       {iaAtiva && <BuscaNatural />}
 
@@ -121,6 +142,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
         <section className="min-w-0 space-y-4" aria-live="polite">
           {erro && <p role="alert" className="aviso-erro">{erro}</p>}
           {salva && <p className="aviso-ok">Pesquisa salva.</p>}
+          {sp.aviso === "ia" && <p className="aviso-erro border-amber-200 bg-amber-50 text-amber-800">A IA está indisponível agora; busquei pelo nome. Use os filtros ao lado para refinar.</p>}
 
           {buscou && !r.baseReceita && (
             <p className="cartao border-amber-300 bg-amber-50 text-sm">
@@ -128,19 +150,12 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
             </p>
           )}
 
-          {pareceCnpj && (
-            <div className="cartao-destaque flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm"><strong>Isso parece um CNPJ.</strong> Para qualquer estado, abra a ficha direto, sem depender da base carregada.</p>
-              <Link href={`/descobrir?alvo=${soDigitos}`} className="btn-primario shrink-0">Abrir {soDigitos.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}</Link>
-            </div>
-          )}
-
           {ufForaDaBase && (
             <div className="cartao border-amber-300 bg-amber-50 text-sm" role="note">
               <p className="font-medium text-amber-900">A base carregada ainda não tem {v.uf}.</p>
               <p className="mt-1 text-amber-900">Hoje ela cobre só {ufsBase.join(", ")}, por isso a pesquisa em {v.uf} volta vazia mesmo que a empresa exista. Opções:</p>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-900">
-                <li>Se você tem o CNPJ, abra a ficha em <Link href="/descobrir" className="underline">Descobrir</Link>: funciona para qualquer estado.</li>
+                <li>Se você tem o CNPJ, digite-o na caixa de busca acima: a ficha abre direto e funciona para qualquer estado.</li>
                 <li>Para trazer um recorte de {v.uf} (por nome ou CNPJ-raiz), use o workflow &quot;Importar Receita&quot; com os campos <code>busca</code> ou <code>raizes</code> (veja <code>docs/carregar-base.md</code>).</li>
               </ul>
             </div>
@@ -211,7 +226,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
                   <h2 className="secao-titulo">Sites já conhecidos</h2>
                   <ul className="flex flex-wrap gap-2 text-sm">
                     {r.sites.map((s) => (
-                      <li key={s}><Link className="chip" href={`/descobrir?alvo=${encodeURIComponent("site:" + s)}`}>{s}</Link></li>
+                      <li key={s}><Link className="chip" href={empresaHref("site:" + s)}>{s}</Link></li>
                     ))}
                   </ul>
                 </div>
@@ -232,7 +247,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
                       <li key={i.cnpj} className="cartao flex flex-col gap-3 transition hover:border-marca-200 hover:shadow-md sm:flex-row sm:items-center">
                         <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-marca-50 text-lg font-semibold text-marca-700 sm:flex" aria-hidden>{nome.charAt(0)}</span>
                         <div className="min-w-0 flex-1">
-                          <Link href={`/descobrir?alvo=${i.cnpj}`} className="block truncate font-semibold text-marca-800 hover:underline">{nome}</Link>
+                          <Link href={empresaHref(i.cnpj)} className="block truncate font-semibold text-marca-800 hover:underline">{nome}</Link>
                           <p className="truncate text-xs text-slate-500">{i.razaoSocial} · {i.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}</p>
                           <p className="mt-1 truncate text-sm text-slate-600">{[i.bairro, i.municipio, i.uf].filter(Boolean).join(" · ")}{i.atividade ? ` — ${i.atividade}` : ""}</p>
                           <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
@@ -246,11 +261,11 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
                             {!i.matriz && <span className="selo-cinza">Filial</span>}
                             {i.temEmail && <span className="selo"><Email width={12} height={12} className="mr-1" />e-mail cadastral</span>}
                             {i.temTelefone && <span className="selo"><Telefone width={12} height={12} className="mr-1" />telefone cadastral</span>}
-                            {i.dominio && <Link href={`/descobrir?alvo=${encodeURIComponent("site:" + i.dominio)}`} className="selo"><Externo width={12} height={12} className="mr-1" />{i.dominio}</Link>}
+                            {i.dominio && <Link href={empresaHref("site:" + i.dominio)} className="selo"><Externo width={12} height={12} className="mr-1" />{i.dominio}</Link>}
                           </div>
                         </div>
                         <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:self-center">
-                          <Link href={`/descobrir?alvo=${i.cnpj}`} className="btn-sec">Ver decisores</Link>
+                          <Link href={empresaHref(i.cnpj)} className="btn-sec">Abrir empresa</Link>
                           <Link href={`/parecidas?cnpj=${i.cnpj}`} className="text-center text-xs text-marca-700 underline">Empresas parecidas</Link>
                         </div>
                       </li>

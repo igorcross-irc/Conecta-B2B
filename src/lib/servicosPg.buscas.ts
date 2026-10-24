@@ -1,6 +1,6 @@
-import { alvoValido, chaveAlvo } from "./cnpj";
+import { alvoValido, chaveAlvo, normalizarBusca } from "./cnpj";
 import { ErroDeNegocio, visivel } from "./servicos";
-import { EstadoBusca, Linha, UUID, VALIDADE_SQL, traduzir } from "./servicosPg.tipos";
+import { EmpresaTrabalhada, EstadoBusca, Linha, UUID, VALIDADE_SQL, traduzir } from "./servicosPg.tipos";
 import type { Ctx } from "./servicosPg.contexto";
 
 /** Serviços do grupo "buscas". */
@@ -152,6 +152,67 @@ export function criarBuscas(c: Ctx) {
         status: x.status as string,
         quando: new Date(x.criado_em as string).toISOString(),
       }));
+    },
+    /**
+     * Empresas em que a organização já trabalhou, consolidadas: pessoas colhidas, dados revelados, listas e buscas,
+     * da mais recente para a mais antiga. Cada empresa aparece uma vez, venha o trabalho de busca, de revelação ou de lista.
+     */
+    async empresasTrabalhadas(f: { q?: string; limite?: number } = {}): Promise<EmpresaTrabalhada[]> {
+      const limite = Math.min(500, Math.max(1, Math.floor(f.limite ?? 200)));
+      const q = normalizarBusca(f.q ?? "");
+      const r = await db.query<Linha>(
+        `with pessoas as (
+           select c.cnpj, count(*)::int as n, count(*) filter (where c.email_revelado)::int as emails,
+                  count(*) filter (where c.telefone_revelado)::int as tels, max(c.obtido_em) as ultima
+             from contato c where c.organizacao_id = $1 group by c.cnpj),
+         listas as (
+           select c.cnpj, count(distinct li.lista_id)::int as n
+             from lista_item li join contato c on c.id = li.contato_id
+            where c.organizacao_id = $1 group by c.cnpj),
+         buscas as (
+           select j.cnpj, count(*)::int as n, max(j.criado_em) as ultima,
+                  (array_agg(j.status order by j.criado_em desc))[1] as status
+             from busca_job j where j.organizacao_id = $1 group by j.cnpj),
+         todas as (
+           select cnpj from pessoas union select cnpj from buscas)
+         select t.cnpj, coalesce(p.n, 0) as pessoas, coalesce(p.emails, 0) as emails, coalesce(p.tels, 0) as tels,
+                coalesce(l.n, 0) as listas, coalesce(b.n, 0) as buscas, b.status,
+                greatest(p.ultima, b.ultima) as atividade,
+                e.dados->>'razaoSocial' as razao, e.dados->>'nomeFantasia' as fantasia, e.dados->>'municipio' as municipio,
+                e.dados->>'uf' as uf, e.dados->>'porte' as porte, e.dados->'cnaePrincipal'->>'descricao' as atividade_desc
+           from todas t
+           left join pessoas p on p.cnpj = t.cnpj left join listas l on l.cnpj = t.cnpj left join buscas b on b.cnpj = t.cnpj
+           left join empresa_cache e on e.cnpj = t.cnpj
+          order by greatest(p.ultima, b.ultima) desc nulls last, t.cnpj`,
+        [org],
+      );
+      const itens = r.rows.map((x): EmpresaTrabalhada => {
+        const cnpj = String(x.cnpj);
+        const fantasia = ((x.fantasia as string) ?? "").trim();
+        return {
+          cnpj,
+          nome: fantasia || (x.razao as string) || (cnpj.startsWith("site:") ? cnpj.slice(5) : cnpj),
+          razaoSocial: (x.razao as string) ?? undefined,
+          municipio: (x.municipio as string) ?? undefined,
+          uf: (x.uf as string) ?? undefined,
+          porte: (x.porte as string) ?? undefined,
+          atividade: (x.atividade_desc as string) ?? undefined,
+          pessoas: Number(x.pessoas), emailsRevelados: Number(x.emails), telefonesRevelados: Number(x.tels),
+          listas: Number(x.listas), buscas: Number(x.buscas),
+          ultimaBusca: (x.status as EmpresaTrabalhada["ultimaBusca"]) ?? undefined,
+          ultimaAtividade: new Date((x.atividade as string) ?? Date.now()).toISOString(),
+        };
+      });
+      const filtradas = q
+        ? itens.filter((i) => normalizarBusca(`${i.nome} ${i.razaoSocial ?? ""} ${i.municipio ?? ""} ${i.cnpj}`).includes(q))
+        : itens;
+      return filtradas.slice(0, limite);
+    },
+    /** Todas as pessoas que a organização já colheu para a empresa, de qualquer busca (com e-mail e telefone mascarados até revelar). */
+    async contatosDaEmpresa(cnpj: string) {
+      if (!alvoValido(cnpj)) throw new ErroDeNegocio("CNPJ ou site inválido.");
+      const ids = (await db.query<Linha>("select id from contato where organizacao_id = $1 and cnpj = $2 order by obtido_em desc, nome", [org, chaveAlvo(cnpj)])).rows.map((x) => x.id as string);
+      return (await guardados(ids)).map(visivel);
     },
     async revelar(params: { contatoId: string; campo: "email" | "telefone" }) {
       if (!UUID.test(params.contatoId)) throw new ErroDeNegocio("Contato não encontrado.", 404);

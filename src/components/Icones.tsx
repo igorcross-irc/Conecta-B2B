@@ -38,5 +38,5 @@ export const Relogio = base(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3
 export const Check = base(<><path d="m5 12.5 4.5 4.5L19 7.5" /></>);
 export const Alerta = base(<><path d="M12 4 2.5 20h19z" /><path d="M12 10v5M12 18h.01" /></>);
 
-export const ICONES = { Busca, Descobrir, Base, Listas, Importar, Creditos, Equipe, Config, Plataforma, Grafico } as const;
+export const ICONES = { Busca, Descobrir, Base, Listas, Importar, Creditos, Equipe, Config, Plataforma, Grafico, Predio } as const;
 export type NomeIcone = keyof typeof ICONES;

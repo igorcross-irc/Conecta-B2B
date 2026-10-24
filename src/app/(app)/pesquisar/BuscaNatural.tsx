@@ -25,7 +25,7 @@ export function BuscaNatural() {
       if (!r.ok) throw new Error(dados.erro ?? "Erro inesperado.");
       const qs = paraParametros(dados.filtros);
       if (!qs) throw new Error("Não consegui transformar isso em filtros. Tente citar atividade, local ou porte.");
-      router.push(`/pesquisar?${qs}`);
+      router.push(`/pesquisar?${qs}${dados.aviso ? `&aviso=ia` : ""}`);
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Erro inesperado.");
     } finally {
