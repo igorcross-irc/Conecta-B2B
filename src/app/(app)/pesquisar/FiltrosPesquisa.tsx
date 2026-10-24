@@ -5,13 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Fechar, Filtro } from "@/components/Icones";
 import { ABERTURAS, PORTES, SETORES } from "@/lib/setores";
-
-export const UFS: [string, string][] = [
-  ["AC", "Acre"], ["AL", "Alagoas"], ["AP", "Amapá"], ["AM", "Amazonas"], ["BA", "Bahia"], ["CE", "Ceará"], ["DF", "Distrito Federal"],
-  ["ES", "Espírito Santo"], ["GO", "Goiás"], ["MA", "Maranhão"], ["MT", "Mato Grosso"], ["MS", "Mato Grosso do Sul"], ["MG", "Minas Gerais"],
-  ["PA", "Pará"], ["PB", "Paraíba"], ["PR", "Paraná"], ["PE", "Pernambuco"], ["PI", "Piauí"], ["RJ", "Rio de Janeiro"], ["RN", "Rio Grande do Norte"],
-  ["RS", "Rio Grande do Sul"], ["RO", "Rondônia"], ["RR", "Roraima"], ["SC", "Santa Catarina"], ["SP", "São Paulo"], ["SE", "Sergipe"], ["TO", "Tocantins"],
-];
+import { UFS } from "@/lib/ufs";
 
 export interface ValoresFiltro {
   nome: string; termos: string; segmento: string; uf: string; cidade: string; bairro: string;
@@ -188,13 +182,14 @@ export function FiltrosPesquisa({ valores, ativos }: { valores: ValoresFiltro; a
             <p className="text-xs text-slate-500">Dados cadastrais da Receita. Costumam ser da contabilidade; para o decisor, use “Descobrir”.</p>
           </Grupo>
 
-          <Grupo titulo="Opções" aberto={valores.filiais || valores.ordem === "recentes"}>
+          <Grupo titulo="Opções" aberto={valores.filiais || valores.ordem !== "nome"}>
             <label className="opcao"><input type="checkbox" name="filiais" value="1" defaultChecked={valores.filiais} />Incluir filiais</label>
             <label className="block text-sm">
               <span className="rotulo">Ordenar por</span>
               <select name="ordem" defaultValue={valores.ordem} className="input mt-1">
                 <option value="nome">Nome (A–Z)</option>
                 <option value="recentes">Mais recentes primeiro</option>
+                <option value="aderencia">Maior aderência ao perfil ideal</option>
               </select>
             </label>
           </Grupo>

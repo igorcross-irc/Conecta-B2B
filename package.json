@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "test:papel": "CONECTA_TESTE_PAPEL=1 vitest run src/lib/servicosPg.test.ts"
+    "test:papel": "CONECTA_TESTE_PAPEL=1 vitest run src/lib/servicosPg.test.ts",
+    "test:e2e": "tsx e2e/preparar.ts && playwright test"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.11",
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@duckdb/node-api": "^2.0.0-r.1",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^22.20.5",
     "@types/pg": "^8.23.1",

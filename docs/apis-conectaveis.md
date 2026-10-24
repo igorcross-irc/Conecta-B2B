@@ -27,7 +27,7 @@ O que está marcado como **ligado** já está no app.
 | Nominatim (OpenStreetMap) | Coordenadas e mapa de qualquer endereço | 1 pedido/s, exige identificação e cache |
 | crt.sh `?q=%.dominio&output=json` | Descobrir subdomínios e confirmar que um domínio é da empresa | Grátis, lento |
 | BNDES dados abertos (CKAN) | Empresas que receberam financiamento do BNDES | Arquivos grandes; ligar por importação |
-| PNCP `pncp.gov.br/api/consulta/v1/contratos` | Contratos públicos | **O filtro por fornecedor é ignorado em silêncio** (testei `niFornecedor` e `cnpjFornecedor`: devolve 1,7 milhão de contratos de qualquer fornecedor). Só serve para varrer por data/órgão e cruzar depois. |
+| PNCP `pncp.gov.br/api/consulta/v1/contratos` | Contratos públicos (fora do escopo, só registro) | **O filtro por fornecedor é ignorado em silêncio** (testei `niFornecedor` e `cnpjFornecedor`: devolve 1,7 milhão de contratos de qualquer fornecedor). Só serve para varrer por data/órgão e cruzar depois. |
 | Gdelt | Notícias globais | Limite de 1 pedido a cada 5 s |
 
 ## Não consegui alcançar daqui (provavelmente funcionam em produção; não verificado)

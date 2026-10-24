@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { abrirBancoLocal, ORG_DEMO, USUARIO_DEMO } from "@/db/local";
+import { pontuar } from "./aderencia";
 import { ProvedorDemo } from "./providers/mock";
 import type { Empresa, ProvedorEmpresa } from "./providers/types";
 import { ErroDeNegocio } from "./servicos";
@@ -716,4 +717,109 @@ describe("cobertura da base", () => {
     await db.query("select atualizar_municipios()");
     expect(await s.cobertura()).toEqual([{ uf: "MG", empresas: 1 }, { uf: "RJ", empresas: 2 }]);
   });
+});
+
+describe("monitoramento das fontes", () => {
+  it("resume por fonte, calcula taxa e tempos, lista falhas e só a operadora vê", async () => {
+    const { db, s } = await novo();
+    await db.query(
+      `insert into provedor_execucao (provedor, tipo, ok, ms, itens, erro, criado_em) values
+       ('BrasilAPI','empresa',true,100,1,null,now()), ('BrasilAPI','empresa',true,300,1,null,now()),
+       ('BrasilAPI','empresa',false,900,null,'HTTP 429',now() - interval '1 hour'),
+       ('Site','contatos',true,2000,3,null,now() - interval '3 days'), ('Site','contatos',false,50,null,'robots',now() - interval '3 days')`,
+    );
+    const r = await s.adminProvedores();
+    const b = r.find((x) => x.provedor === "BrasilAPI")!;
+    expect(b).toMatchObject({ tipo: "empresa", chamadas24h: 3, falhas24h: 1, ultimoErro: "HTTP 429" });
+    expect(b.p50).toBe(300);
+    const site = r.find((x) => x.provedor === "Site")!;
+    expect(site).toMatchObject({ chamadas24h: 0, chamadas7d: 2, falhas7d: 1 });
+    expect((await s.adminFalhasProvedores())[0]).toMatchObject({ provedor: "BrasilAPI", erro: "HTTP 429" });
+    await db.query("insert into erro_app (origem, mensagem) values ('rota','falhou')");
+    expect((await s.adminErros())[0]).toMatchObject({ origem: "rota", mensagem: "falhou" });
+    const comum = criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [], ator: { usuarioId: USUARIO_DEMO, papel: "administrador", operadora: false } });
+    await expect(comum.adminProvedores()).rejects.toThrow(/operadora/);
+  }, 30000);
+
+  it("a ficha da empresa grava a execução de cada fonte extra (sem contar cache)", async () => {
+    const { db } = await novo();
+    const registros: { provedor: string; ok: boolean }[] = [];
+    const s = criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [], registrar: async (e) => void registros.push({ provedor: e.provedor, ok: e.ok }) });
+    await s.enriquecer("33000167000101");
+    expect(registros.length).toBeGreaterThan(0);
+    expect(registros.every((r) => r.provedor.startsWith("Informação extra:"))).toBe(true);
+  }, 30000);
+});
+
+describe("pesquisa para exportação", () => {
+  it("devolve e-mail, telefone e CNAE só com `completo`, e respeita porPagina", async () => {
+    const { db, s } = await novo();
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, nome_fantasia, matriz, situacao, cnae, uf, municipio, email, telefone, busca) values
+       ('33000167000101','A',null,true,'ATIVA',1091102,'RJ','NITEROI','a@a.com','2133334444','a'),
+       ('11222333000181','B',null,true,'ATIVA',1091102,'RJ','NITEROI',null,null,'b'),
+       ('00000000000191','C',null,true,'ATIVA',1091102,'RJ','NITEROI',null,null,'c')`,
+    );
+    const simples = await s.pesquisar({ uf: "RJ" });
+    expect(simples.itens[0].email).toBeUndefined();
+    const completo = await s.pesquisar({ uf: "RJ", completo: true, porPagina: 2 });
+    expect(completo.itens).toHaveLength(2);
+    expect(completo.total).toBe(3);
+    expect(completo.itens.find((i) => i.cnpj === "33000167000101")).toMatchObject({ email: "a@a.com", telefone: "2133334444", cnae: 1091102 });
+    expect((await s.pesquisar({ uf: "RJ", porPagina: 2, pagina: 1 })).itens).toHaveLength(1);
+  }, 30000);
+});
+
+describe("perfil de cliente ideal e aderência", () => {
+  it("salva o perfil limpo, ordena por aderência e a nota do SQL bate com a do TypeScript", async () => {
+    const { db, s } = await novo();
+    expect(await s.perfilIdeal()).toMatchObject({ setores: [], ufs: [] });
+    const salvo = await s.salvarPerfilIdeal({ setores: ["alimentos", "inexistente"], portes: ["Micro empresa"], ufs: ["RJ", "XX"], idadeMin: 2, exigeEmail: true });
+    expect(salvo).toMatchObject({ setores: ["alimentos"], portes: ["Micro empresa"], ufs: ["RJ"], idadeMin: 2, exigeEmail: true });
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, matriz, situacao, cnae, uf, municipio, porte, aberta_em, email, busca) values
+       ('33000167000101','Perfeita',true,'ATIVA',1091102,'RJ','NITEROI','Micro empresa','2015-01-01','a@a.com','perfeita'),
+       ('11222333000181','Metade',true,'ATIVA',1091102,'RJ','NITEROI','Demais','2015-01-01',null,'metade'),
+       ('00000000000191','Nenhuma',true,'ATIVA',4711301,'SP','SAO PAULO','Demais','2025-12-01',null,'nenhuma')`,
+    );
+    const r = await s.pesquisar({ abertaDesde: "2000-01-01", aderencia: true, ordem: "aderencia", completo: true });
+    expect(r.temPerfil).toBe(true);
+    expect(r.itens.map((i) => i.razaoSocial)).toEqual(["Perfeita", "Metade", "Nenhuma"]);
+    for (const i of r.itens) {
+      const ts = pontuar(salvo, { cnae: i.cnae, porte: i.porte, uf: i.uf, municipio: i.municipio, abertaEm: i.abertaEm, temEmail: i.temEmail, temTelefone: i.temTelefone });
+      expect(i.aderencia).toBe(ts?.nota);
+    }
+    expect(r.itens[0].aderencia).toBe(100);
+    expect(r.itens[2].aderencia).toBe(0);
+  }, 30000);
+
+  it("sem perfil não calcula nota", async () => {
+    const { s } = await novo();
+    const r = await s.pesquisar({ uf: "RJ", aderencia: true });
+    expect(r.temPerfil).toBe(false);
+  }, 30000);
+});
+
+describe("aviso de fonte fora do ar", () => {
+  it("só manda e-mail quando alguma fonte passa de 30% de falhas (com ao menos 5 chamadas)", async () => {
+    const { db, s } = await novo();
+    const enviados: { para: string; assunto: string; texto: string }[] = [];
+    const enviar = async (m: { para: string; assunto: string; texto: string }) => void enviados.push(m);
+    await db.query(
+      `insert into provedor_execucao (provedor, tipo, ok, ms, erro)
+       select 'FonteBoa', 'empresa', true, 100, null from generate_series(1, 10)`,
+    );
+    await db.query(
+      `insert into provedor_execucao (provedor, tipo, ok, ms, erro) select 'FonteRara', 'contatos', false, 100, 'x' from generate_series(1, 3)`,
+    );
+    expect(await s.avisarFontesForaDoAr(enviar, "op@exemplo.com", "https://app")).toEqual({ foraDoAr: 0, enviado: false });
+    expect(enviados).toHaveLength(0);
+    await db.query(
+      `insert into provedor_execucao (provedor, tipo, ok, ms, erro) select 'FonteRuim', 'contatos', false, 100, 'timeout' from generate_series(1, 6)`,
+    );
+    expect(await s.avisarFontesForaDoAr(enviar, "op@exemplo.com", "https://app")).toEqual({ foraDoAr: 1, enviado: true });
+    expect(enviados[0].para).toBe("op@exemplo.com");
+    expect(enviados[0].texto).toContain("FonteRuim");
+    expect(enviados[0].texto).not.toContain("FonteBoa");
+  }, 30000);
 });

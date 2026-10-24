@@ -1,4 +1,5 @@
-import { contexto, responderErro } from "@/lib/app";
+import { contexto, registrarFonte, responderErro } from "@/lib/app";
+import { medir } from "@/lib/monitor";
 import { redigirAbordagem } from "@/lib/ia/assistente";
 import { chaveGemini } from "@/lib/ia/gemini";
 import { ErroDeNegocio } from "@/lib/servicos";
@@ -14,11 +15,12 @@ export async function POST(req: Request) {
     if (c.canal !== "email" && c.canal !== "whatsapp" && c.canal !== "linkedin") {
       return Response.json({ erro: "Canal deve ser email, whatsapp ou linkedin." }, { status: 400 });
     }
+    const canal = c.canal;
     const dados = await servicos.dadosParaAbordagem(c.contatoId ?? "");
     try {
-      const mensagem = await redigirAbordagem({
-        ...dados, canal: c.canal, proposta: c.proposta ?? "", remetente: (c.remetente ?? sessao.nome ?? "").slice(0, 80),
-      });
+      const mensagem = await medir("Gemini: mensagem de abordagem", "ia", () => redigirAbordagem({
+        ...dados, canal, proposta: c.proposta ?? "", remetente: (c.remetente ?? sessao.nome ?? "").slice(0, 80),
+      }), registrarFonte, () => 1);
       return Response.json({ mensagem });
     } catch (e) {
       throw new ErroDeNegocio(e instanceof Error ? e.message : "A IA não respondeu.", chaveGemini() ? 502 : 503);

@@ -6,7 +6,7 @@ Pesquisa de 21/10/2026. Objetivo: um executivo de vendas busca uma empresa e obt
 | Camada | O que entrega | Fontes possíveis |
 |---|---|---|
 | Empresa (Brasil) | Razão social, fantasia, situação cadastral, porte, CNAE, capital social, endereço, telefone e e-mail cadastrados, Simples/MEI, quadro societário | Dados abertos da Receita Federal, APIs de CNPJ |
-| Empresa (sinais) | Vagas abertas, licitações, notícias, tecnologias usadas, site e logo | Gupy (vagas), PNCP (licitações), site da empresa, APIs de CNPJ com logo e site |
+| Empresa (sinais) | Notícias, tecnologias usadas, site e logo | Notícias, site da empresa, APIs de CNPJ com logo e site |
 | Pessoa (profissional) | Nome, cargo, senioridade, departamento, e-mail corporativo, celular, URL do LinkedIn | Provedores de enriquecimento por API |
 | Verificação | Validade do e-mail (sintaxe, domínio, caixa), tipo de telefone | Verificadores e cascata de provedores |
 
@@ -14,7 +14,7 @@ Pesquisa de 21/10/2026. Objetivo: um executivo de vendas busca uma empresa e obt
 - **Base aberta de CNPJ da Receita Federal.** [Segundo o TabNews](https://www.tabnews.com.br/antoniorincon/prospeccao-b2b-com-dados-publicos-de-cnpj-achar-enriquecer), toda lista de prospecção vendida nasce dela. Tem sócios com CPF mascarado e faixa etária.
   - Limites: telefone e e-mail cadastrados muitas vezes são da contabilidade; a situação cadastral demora semanas para refletir mudanças; consultas em massa por API são lentas, e para volume o melhor é baixar a base completa.
 - **APIs de consulta de CNPJ.** Exemplo: [CNPJ-API](https://docs.cnpj-api.com/en/introducao) (Receita Federal, Simples Nacional, logos e sites; tokens gratuitos com limite). Existem outras (BrasilAPI, ReceitaWS, CNPJá); os preços não foram verificados.
-- **Sinais complementares:** vagas na Gupy (só empresas que a usam) e licitações no PNCP.
+- **Sinais complementares:** notícias e empresas recém-abertas. Vagas de emprego e licitações ficaram fora do escopo (decisão de 24/10/2026: o produto é prospecção B2B de empresas, não busca de vagas).
 
 ## 3. Provedores de contatos com API
 Fonte: [comparativo do FullEnrich](https://fullenrich.com/content/enrichment-api-tools) (de um fornecedor concorrente, preços de set/2026).

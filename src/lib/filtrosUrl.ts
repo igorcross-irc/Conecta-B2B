@@ -2,7 +2,7 @@
 export interface FiltrosUrl {
   nome?: string; termos?: string; uf?: string; cidade?: string; bairro?: string; segmento?: string;
   setores?: string[]; porte?: string[]; abertura?: string; comEmail?: boolean; comTelefone?: boolean;
-  ordem?: "nome" | "recentes"; incluirFiliais?: boolean;
+  ordem?: "nome" | "recentes" | "aderencia"; incluirFiliais?: boolean;
 }
 
 export function paraParametros(f: FiltrosUrl): string {
@@ -12,7 +12,7 @@ export function paraParametros(f: FiltrosUrl): string {
   for (const x of f.porte ?? []) q.append("porte", x);
   if (f.comEmail) q.set("email", "1");
   if (f.comTelefone) q.set("telefone", "1");
-  if (f.ordem === "recentes") q.set("ordem", "recentes");
+  if (f.ordem === "recentes" || f.ordem === "aderencia") q.set("ordem", f.ordem);
   if (f.incluirFiliais) q.set("filiais", "1");
   return q.toString();
 }
@@ -33,7 +33,7 @@ export function limparFiltros(bruto: unknown): FiltrosUrl {
   }
   if (r.comEmail === true) f.comEmail = true;
   if (r.comTelefone === true) f.comTelefone = true;
-  if (r.ordem === "recentes") f.ordem = "recentes";
+  if (r.ordem === "recentes" || r.ordem === "aderencia") f.ordem = r.ordem;
   if (r.incluirFiliais === true) f.incluirFiliais = true;
   return f;
 }

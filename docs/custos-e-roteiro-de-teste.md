@@ -9,7 +9,6 @@ Pesquisa de 21/10/2026. Preços vêm de páginas dos fornecedores ou de blogs co
 |---|---|---|
 | Base aberta de CNPJ (Receita Federal) | Empresa, CNAE, porte, endereço, telefone e e-mail cadastrados, sócios com CPF mascarado | Publicada todo mês. [Uma base completa tem cerca de 73 milhões de estabelecimentos, 37 arquivos zip e cerca de 8 GB compactados (27 GB em CSV)](https://www.tabnews.com.br/jeffev/transformei-a-base-aberta-do-cnpj-73-milhoes-de-estabelecimentos-em-buscas-de-segundos-sem-servidor-e-sem-banco-de-dados). O texto tem problemas de codificação. Contatos muitas vezes são da contabilidade |
 | APIs de consulta de CNPJ com token grátis | Mesmos dados, por consulta, mais logo e site | [Limite de uso no plano grátis](https://docs.cnpj-api.com/en/introducao); para volume, usar a base baixada |
-| Gupy (vagas) e PNCP (licitações) | Sinais de compra | Gupy só cobre quem a usa |
 | Site da própria empresa | Páginas "contato", "sobre" e "equipe" | Exige coleta própria; dado defasado; respeitar termos do site |
 | Planos grátis de provedores | Hunter 50 créditos/mês (só e-mail), Apollo grátis, People Data Labs 100 créditos/mês (dados ofuscados) | Servem para teste, não para operação |
 

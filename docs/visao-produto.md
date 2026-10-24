@@ -16,7 +16,7 @@ ConnectLeads e SPYADS ficam como referências funcionais, não como molde de seg
 ## Personalizável por tenant (proposta)
 | O que muda | Exemplo |
 |---|---|
-| Sinais de compra (gatilhos) | Mídia: anúncios em rádio. Outros segmentos: vaga aberta, expansão, nova filial, licitação, notícia, mudança de cargo, uso de determinada tecnologia |
+| Sinais de compra (gatilhos) | Mídia: anúncios em rádio. Outros segmentos: expansão, nova filial, notícia, mudança de cargo, uso de determinada tecnologia |
 | Módulos ativos | Radar de sinais, negócios locais, decisores, listas, CRM leve |
 | Campos e nomenclatura | Rótulos próprios (conta, praça, território) e campos personalizados na empresa e no contato |
 | Perfil de cliente ideal e pontuação | Regras de pontuação de lead por tenant |

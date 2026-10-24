@@ -121,6 +121,7 @@ export default function Descobrir({ cnpjInicial = "", iaAtiva = false }: { cnpjI
   const [disponiveis, setDisponiveis] = useState<number | null>(null);
   const [aba, setAba] = useState<"resumo" | "pessoas" | "extras" | "socios">("resumo");
   const extras = useEnriquecimento(empresa?.cnpj);
+  const abasRef = useRef<HTMLDivElement>(null);
 
   // Guarda o estado da busca e, ao concluir, mostra os contatos.
   function aplicarBusca(b: Busca | null) {
@@ -128,6 +129,8 @@ export default function Descobrir({ cnpjInicial = "", iaAtiva = false }: { cnpjI
     if (b?.status !== "concluida") return;
     setContatos(b.contatos ?? []);
     setAba("pessoas");
+    // No celular as abas ficam abaixo da dobra: leva a tela até elas para o resultado não passar despercebido.
+    setTimeout(() => abasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
     if (b.saldo !== undefined) setSaldo(b.saldo);
     if ((b.contatos ?? []).length === 0) setAviso("Nenhuma pessoa encontrada nas fontes ligadas (quadro societário e site). O crédito foi devolvido. Para achar mais gente, ligue as fontes extras em Plataforma › IA (chaves Tavily e Hunter).");
   }
@@ -267,7 +270,7 @@ export default function Descobrir({ cnpjInicial = "", iaAtiva = false }: { cnpjI
   const abas: { id: typeof aba; rotulo: string; n?: number }[] = [
     { id: "resumo", rotulo: "Resumo" },
     { id: "pessoas", rotulo: "Pessoas", n: contatos.length || undefined },
-    { id: "extras", rotulo: "Informações extras" },
+    { id: "extras", rotulo: "Extras" },
     { id: "socios", rotulo: "Sócios", n: empresa?.socios.length || undefined },
   ];
 
@@ -377,14 +380,14 @@ export default function Descobrir({ cnpjInicial = "", iaAtiva = false }: { cnpjI
             {busca?.status === "concluida" && busca.doPool && <p className="text-xs text-slate-500">Resultado reaproveitado de uma varredura recente.</p>}
           </section>
 
-          <div role="tablist" aria-label="Seções da empresa" className="-mx-4 flex gap-1 overflow-x-auto border-b border-slate-200 px-4 md:mx-0 md:px-0">
+          <div ref={abasRef} role="tablist" aria-label="Seções da empresa" className="scroll-mt-16 -mx-4 flex gap-1 overflow-x-auto border-b border-slate-200 px-4 md:mx-0 md:px-0">
             {abas.map((a) => (
               <button
                 key={a.id}
                 role="tab"
                 aria-selected={aba === a.id}
                 onClick={() => setAba(a.id)}
-                className={`-mb-px flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition ${aba === a.id ? "border-marca-700 text-marca-800" : "border-transparent text-slate-500 hover:text-slate-800"}`}
+                className={`-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-3 text-sm font-medium transition sm:gap-2 sm:px-4 ${aba === a.id ? "border-marca-700 text-marca-800" : "border-transparent text-slate-500 hover:text-slate-800"}`}
               >
                 {a.rotulo}
                 {a.n !== undefined && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{a.n}</span>}

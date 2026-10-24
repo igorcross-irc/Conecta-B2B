@@ -1,3 +1,4 @@
+import { ROTULO_DIMENSAO, type Dimensao } from "@/lib/aderencia";
 import Link from "next/link";
 import { connection } from "next/server";
 import { contexto } from "@/lib/app";
@@ -5,8 +6,10 @@ import { emailConfigurado } from "@/lib/email";
 import { limparFiltros, paraParametros, resumoFiltros } from "@/lib/filtrosUrl";
 import { chaveGemini } from "@/lib/ia/gemini";
 import { ABERTURAS, PORTES, SETORES } from "@/lib/setores";
-import { Email, Externo, Predio, Relogio, Salvar, Sparkles, Telefone } from "@/components/Icones";
+import { Email, Externo, Importar, Predio, Relogio, Salvar, Sparkles, Telefone } from "@/components/Icones";
+import { FORMATOS, ROTULO_FORMATO } from "@/lib/exportacao";
 import { removerPesquisaAcao, salvarPesquisaAcao } from "../acoes";
+import { Paginacao } from "@/components/Paginacao";
 import { BuscaNatural } from "./BuscaNatural";
 import { FiltrosPesquisa, type ValoresFiltro } from "./FiltrosPesquisa";
 
@@ -41,7 +44,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
     porte: lista(sp, "porte").filter((x) => (PORTES as readonly string[]).includes(x)),
     abertura: ABERTURAS.some((a) => a.id === sp.abertura) ? (sp.abertura as string) : "",
     email: sp.email === "1", telefone: sp.telefone === "1", filiais: sp.filiais === "1",
-    ordem: sp.ordem === "recentes" ? "recentes" : "nome",
+    ordem: sp.ordem === "recentes" ? "recentes" : sp.ordem === "aderencia" ? "aderencia" : "nome",
   };
   const pagina = Math.max(0, Number(texto(sp, "pagina")) || 0);
   const erro = texto(sp, "erro");
@@ -78,7 +81,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
   const [salvas, cobertura, r] = await Promise.all([
     servicos.pesquisasSalvas(),
     servicos.cobertura().catch(() => []),
-    servicos.pesquisar({ ...filtros, setores: v.setores, porte: v.porte, abertura: v.abertura || undefined, comEmail: v.email, comTelefone: v.telefone, ordem: v.ordem === "recentes" ? "recentes" : "nome", incluirFiliais: v.filiais, pagina }),
+    servicos.pesquisar({ ...filtros, setores: v.setores, porte: v.porte, abertura: v.abertura || undefined, comEmail: v.email, comTelefone: v.telefone, ordem: v.ordem as "nome" | "recentes" | "aderencia", aderencia: true, incluirFiliais: v.filiais, pagina }),
   ]);
 
   const ufsBase = cobertura.map((c) => c.uf);
@@ -92,7 +95,6 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
     return `/pesquisar?${q}`;
   };
   const paginas = Math.max(1, Math.ceil(r.total / POR_PAGINA));
-  const janela = Array.from({ length: paginas }, (_, i) => i).filter((i) => i === 0 || i === paginas - 1 || Math.abs(i - pagina) <= 2);
   const iaAtiva = Boolean(chaveGemini());
 
   return (
@@ -165,8 +167,31 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
                 <div className="flex items-center gap-2 text-sm" role="group" aria-label="Ordenar">
                   <Link href={href({ ordem: "nome", pagina: "0" })} className={v.ordem === "nome" ? "chip-ativo" : "chip"}>A–Z</Link>
                   <Link href={href({ ordem: "recentes", pagina: "0" })} className={v.ordem === "recentes" ? "chip-ativo" : "chip"}>Mais recentes</Link>
+                  {r.temPerfil ? (
+                    <Link href={href({ ordem: "aderencia", pagina: "0" })} className={v.ordem === "aderencia" ? "chip-ativo" : "chip"}>Aderência ao perfil</Link>
+                  ) : (
+                    <Link href="/configuracoes#perfil-ideal" className="chip" title="Defina o cliente ideal para ordenar por aderência">Definir perfil ideal</Link>
+                  )}
                 </div>
               </div>
+
+              {r.total > 0 && (
+                <details className="cartao p-0">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-marca-800 marker:hidden">
+                    <Importar width={18} height={18} /> Exportar estas {r.total.toLocaleString("pt-BR")} empresas para planilha ou CRM
+                  </summary>
+                  <div className="space-y-2 border-t border-slate-100 p-4 text-sm">
+                    <div className="flex flex-wrap gap-2">
+                      {FORMATOS.map((f) => (
+                        <a key={f} className="btn-sec" href={`/api/pesquisar/exportar?${paramsAtuais}${paramsAtuais ? "&" : ""}formato=${f}`}>{f === "padrao" ? "CSV padrão" : ROTULO_FORMATO[f]}</a>
+                      ))}
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Dados públicos da Receita (não gasta crédito). Cada arquivo leva até 5.000 empresas{r.total > 5000 ? `; para as demais, acrescente &pagina=1, 2…` : ""}. Contatos de pessoas saem das listas, depois de revelados.
+                    </p>
+                  </div>
+                </details>
+              )}
 
               <details className="cartao group p-0">
                 <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-marca-800 marker:hidden">
@@ -211,6 +236,11 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
                           <p className="truncate text-xs text-slate-500">{i.razaoSocial} · {i.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}</p>
                           <p className="mt-1 truncate text-sm text-slate-600">{[i.bairro, i.municipio, i.uf].filter(Boolean).join(" · ")}{i.atividade ? ` — ${i.atividade}` : ""}</p>
                           <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
+                            {i.aderencia !== undefined && (
+                              <span className={i.aderencia >= 70 ? "selo" : "selo-cinza"} title={(i.motivos ?? []).map((m) => `${ROTULO_DIMENSAO[m.dimensao as Dimensao]}: ${m.ok ? "combina" : "não combina"}`).join(" · ")}>
+                                {i.aderencia}% aderente
+                              </span>
+                            )}
                             {i.porte && <span className="selo-cinza">{i.porte}</span>}
                             {anos !== undefined && <span className="selo-cinza"><Relogio width={12} height={12} className="mr-1" />{anos < 1 ? "menos de 1 ano" : `${anos} ano${anos > 1 ? "s" : ""}`}</span>}
                             {!i.matriz && <span className="selo-cinza">Filial</span>}
@@ -226,18 +256,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
                 </ul>
               )}
 
-              {paginas > 1 && (
-                <nav className="flex flex-wrap items-center justify-center gap-1.5" aria-label="Páginas">
-                  {pagina > 0 && <Link className="chip" href={href({ pagina: String(pagina - 1) })}>← Anterior</Link>}
-                  {janela.map((i, idx) => (
-                    <span key={i} className="flex items-center gap-1.5">
-                      {idx > 0 && janela[idx - 1] !== i - 1 && <span className="text-slate-400">…</span>}
-                      <Link href={href({ pagina: String(i) })} aria-current={i === pagina ? "page" : undefined} className={i === pagina ? "chip-ativo" : "chip"}>{i + 1}</Link>
-                    </span>
-                  ))}
-                  {pagina + 1 < paginas && <Link className="chip" href={href({ pagina: String(pagina + 1) })}>Próxima →</Link>}
-                </nav>
-              )}
+              <Paginacao pagina={pagina} paginas={paginas} href={(i) => href({ pagina: String(i) })} />
             </>
           ) : (
             <div className="space-y-5">

@@ -1,4 +1,5 @@
-import { contexto, responderErro } from "@/lib/app";
+import { contexto, registrarFonte, responderErro } from "@/lib/app";
+import { medir } from "@/lib/monitor";
 import { interpretarBusca } from "@/lib/ia/assistente";
 import { chaveGemini } from "@/lib/ia/gemini";
 import { ErroDeNegocio } from "@/lib/servicos";
@@ -12,7 +13,7 @@ export async function POST(req: Request) {
     }
     const { texto } = (await req.json()) as { texto?: string };
     try {
-      return Response.json({ filtros: await interpretarBusca(texto ?? "") });
+      return Response.json({ filtros: await medir("Gemini: busca em linguagem natural", "ia", () => interpretarBusca(texto ?? ""), registrarFonte, () => 1) });
     } catch (e) {
       throw new ErroDeNegocio(e instanceof Error ? e.message : "A IA não respondeu.", chaveGemini() ? 502 : 503);
     }

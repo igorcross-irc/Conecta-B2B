@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { convidar, type Resultado } from "../acoes";
 
 export function FormConvite() {
   const [r, acao, ocupado] = useActionState<Resultado, FormData>(convidar, {});
+  const [copiado, setCopiado] = useState(false);
   return (
     <form action={acao} className="space-y-3">
       <div className="flex flex-wrap gap-3">
@@ -26,7 +27,19 @@ export function FormConvite() {
         <div className="aviso-ok space-y-2">
           <p>{r.ok}</p>
           {r.link && (
-            <input readOnly value={r.link} onFocus={(e) => e.currentTarget.select()} className="input font-mono text-xs" />
+            <div className="flex gap-2">
+              <input readOnly value={r.link} onFocus={(e) => e.currentTarget.select()} className="input font-mono text-xs" aria-label="Link do convite" />
+              <button
+                type="button"
+                className="btn-sec shrink-0"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(r.link!);
+                  setCopiado(true);
+                }}
+              >
+                {copiado ? "Copiado" : "Copiar"}
+              </button>
+            </div>
           )}
         </div>
       )}

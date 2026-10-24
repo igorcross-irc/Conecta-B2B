@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 import { contexto } from "@/lib/app";
 import { FormNome } from "./FormNome";
+import { FormPerfil } from "./FormPerfil";
 import { FormChaveApi } from "./FormChaveApi";
 import { revogarChaveApiAcao } from "../acoes";
 
@@ -16,6 +17,7 @@ const ROTULO_ACAO: Record<string, string> = {
   "base.contato": "Adicionou contato à base",
   "api.criar_chave": "Criou chave de API",
   "api.revogar_chave": "Revogou chave de API",
+  "organizacao.perfil_ideal": "Atualizou o perfil de cliente ideal",
   "pesquisa.salvar": "Salvou pesquisa",
   "admin.recarga": "Recarga de créditos (operadora)",
   "admin.custos": "Custos alterados (operadora)",
@@ -27,6 +29,7 @@ export default async function Configuracoes() {
   const org = await servicos.organizacao();
   const admin = sessao.papel === "administrador";
   const chaves = admin ? await servicos.chavesApi() : [];
+  const perfil = await servicos.perfilIdeal();
   const auditoria = admin ? await servicos.auditoriaRecente(40) : [];
   return (
     <div className="space-y-6">
@@ -50,6 +53,15 @@ export default async function Configuracoes() {
           <li>Revelar e-mail: {org.custos.revelar_email} crédito(s)</li>
           <li>Revelar telefone: {org.custos.revelar_telefone} crédito(s)</li>
         </ul>
+      </section>
+
+      <section id="perfil-ideal" className="cartao space-y-3 text-sm">
+        <h2 className="font-medium">Perfil de cliente ideal</h2>
+        <p className="text-slate-600">
+          Marque como é o seu cliente ideal. A pesquisa mostra, em cada empresa, quanto ela combina com esse perfil (de 0 a 100%) e pode ordenar por isso.
+          Só conta o que você marcar aqui.
+        </p>
+        {admin ? <FormPerfil perfil={perfil} /> : <p className="text-slate-500">Somente administradores editam o perfil.</p>}
       </section>
 
       {admin && (
