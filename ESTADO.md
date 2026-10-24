@@ -130,3 +130,10 @@ Tudo abaixo está testado (153 testes + 49 sob o papel limitado, typecheck, lint
 - **Achado:** o filtro por fornecedor do PNCP é ignorado em silêncio, então não dá para saber que contratos uma empresa ganhou por essa API.
 - **Ação do Igor:** aplicar `db/neon/0011` e `0012`; cadastrar a chave grátis do Portal da Transparência (e-mail em portaldatransparencia.gov.br/api-de-dados/cadastrar-email) e definir `PORTAL_TRANSPARENCIA_TOKEN`; rodar de novo o importador (ou `select atualizar_municipios()` no Neon) para as sugestões de cidade.
 - **Não feito:** faturamento e funcionários para empresas pequenas (sem fonte aberta), Google Places e verificador de e-mail pago (precisam de chave), telas de Base/Equipe/Admin repaginadas uma a uma (herdam o novo visual, mas não ganharam layout próprio).
+
+## 24/10/2026 (madrugada) — pesquisa em estado fora da base voltava 0
+
+- **Causa:** a tabela `rf_estabelecimento` só tem o RJ (SP não coube no plano grátis do Neon). Pesquisar em SP voltava "0 empresas" sem explicar.
+- **Corrigido na tela:** a Pesquisar mostra quais UFs a base cobre; ao filtrar uma UF fora dela, avisa e indica as saídas; digitar um CNPJ de 14 dígitos oferece abrir a ficha direto (funciona para qualquer estado, pelas APIs).
+- **Importação por recorte** (`docs/carregar-base.md`): o importador e o workflow "Importar Receita" ganharam `busca` (todas as palavras no nome, na razão social ou no fantasia) e `raizes` (CNPJs-raiz, todos os estabelecimentos, qualquer UF). Testado contra o espelho real do Hugging Face: por CNPJ-raiz ~30 s; por nome em SP ~1 min 20 s. O workflow deixou de montar o comando por texto (entradas por variável de ambiente, sem `eval`).
+- **Ação do Igor:** rodar o workflow com `ufs=SP`, `busca=<nome do grupo>`, `filiais=true` (ou `raizes=<raiz1>,<raiz2>`) para trazer as razões da empresa em SP.

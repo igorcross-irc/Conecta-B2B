@@ -1037,6 +1037,12 @@ export function criarServicosPg({
       return r ? { orgId: r.organizacao_id, usuarioId: r.usuario_id } : null;
     },
 
+    /** UFs que existem na base da Receita carregada e quantas empresas cada uma tem (a base não cobre o Brasil inteiro). */
+    async cobertura(): Promise<{ uf: string; empresas: number }[]> {
+      const r = await db.query<Linha>("select uf, sum(qtd)::bigint as n from rf_municipio group by uf order by uf");
+      return r.rows.map((x) => ({ uf: x.uf as string, empresas: Number(x.n) }));
+    },
+
     /** Sugestões ao digitar na pesquisa: cidades (da lista de municípios da base) e atividades (CNAE). */
     async sugerir(campo: "cidade" | "segmento", q: string, uf?: string): Promise<{ valor: string; detalhe?: string }[]> {
       const t = normalizarBusca(q);

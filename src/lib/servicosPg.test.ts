@@ -703,3 +703,17 @@ describe("sugestões da pesquisa", () => {
     expect((await s.sugerir("segmento", "4721")).map((x) => x.detalhe)).toEqual(["CNAE 4721102"]);
   });
 });
+
+describe("cobertura da base", () => {
+  it("diz quais UFs estão carregadas e quantas empresas cada uma tem", async () => {
+    const { db, s } = await novo();
+    expect(await s.cobertura()).toEqual([]);
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, matriz, situacao, cnae, uf, municipio, busca) values
+       ('33000167000101','A',true,'ATIVA',1091102,'RJ','NITERÓI','a'), ('11222333000181','B',true,'ATIVA',1091102,'RJ','RIO','b'),
+       ('00000000000191','C',true,'ATIVA',1091102,'MG','BELO HORIZONTE','c')`,
+    );
+    await db.query("select atualizar_municipios()");
+    expect(await s.cobertura()).toEqual([{ uf: "MG", empresas: 1 }, { uf: "RJ", empresas: 2 }]);
+  });
+});

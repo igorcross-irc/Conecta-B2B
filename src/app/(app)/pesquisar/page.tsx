@@ -75,11 +75,16 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
   ];
 
   const { servicos } = await contexto();
-  const [salvas, r] = await Promise.all([
+  const [salvas, cobertura, r] = await Promise.all([
     servicos.pesquisasSalvas(),
+    servicos.cobertura().catch(() => []),
     servicos.pesquisar({ ...filtros, setores: v.setores, porte: v.porte, abertura: v.abertura || undefined, comEmail: v.email, comTelefone: v.telefone, ordem: v.ordem === "recentes" ? "recentes" : "nome", incluirFiliais: v.filiais, pagina }),
   ]);
 
+  const ufsBase = cobertura.map((c) => c.uf);
+  const ufForaDaBase = v.uf && ufsBase.length > 0 && !ufsBase.includes(v.uf);
+  const soDigitos = v.nome.replace(/\D/g, "");
+  const pareceCnpj = soDigitos.length === 14 && !/[a-zA-Z]/.test(v.nome);
   const paramsAtuais = paraParametros(filtros);
   const href = (extra: Record<string, string>) => {
     const q = new URLSearchParams(paramsAtuais);
@@ -96,6 +101,11 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
         <div>
           <h1 className="titulo-pagina">Pesquisar empresas</h1>
           <p className="sub-pagina">Filtre a base da Receita por atividade, local, porte e idade. Abra uma empresa para ver os decisores.</p>
+          {cobertura.length > 0 && (
+            <p className="mt-1 text-xs text-slate-500">
+              Base carregada: {cobertura.map((c) => `${c.uf} (${c.empresas.toLocaleString("pt-BR")} empresas)`).join(", ")}. Para outros estados, abra a empresa direto pelo CNPJ em <Link href="/descobrir" className="text-marca-700 underline">Descobrir</Link>.
+            </p>
+          )}
         </div>
       </header>
 
@@ -114,6 +124,24 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
             <p className="cartao border-amber-300 bg-amber-50 text-sm">
               A base de estabelecimentos da Receita ainda não foi carregada, então só aparecem empresas e sites já pesquisados pela equipe. A carga é feita pelo workflow &quot;Importar Receita&quot; (veja o ESTADO.md).
             </p>
+          )}
+
+          {pareceCnpj && (
+            <div className="cartao-destaque flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm"><strong>Isso parece um CNPJ.</strong> Para qualquer estado, abra a ficha direto, sem depender da base carregada.</p>
+              <Link href={`/descobrir?alvo=${soDigitos}`} className="btn-primario shrink-0">Abrir {soDigitos.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}</Link>
+            </div>
+          )}
+
+          {ufForaDaBase && (
+            <div className="cartao border-amber-300 bg-amber-50 text-sm" role="note">
+              <p className="font-medium text-amber-900">A base carregada ainda não tem {v.uf}.</p>
+              <p className="mt-1 text-amber-900">Hoje ela cobre só {ufsBase.join(", ")}, por isso a pesquisa em {v.uf} volta vazia mesmo que a empresa exista. Opções:</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-900">
+                <li>Se você tem o CNPJ, abra a ficha em <Link href="/descobrir" className="underline">Descobrir</Link>: funciona para qualquer estado.</li>
+                <li>Para trazer um recorte de {v.uf} (por nome ou CNPJ-raiz), use o workflow &quot;Importar Receita&quot; com os campos <code>busca</code> ou <code>raizes</code> (veja <code>docs/carregar-base.md</code>).</li>
+              </ul>
+            </div>
           )}
 
           {chips.length > 0 && (
@@ -168,7 +196,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
                 <div className="vazio">
                   <Predio width={32} height={32} className="text-slate-400" />
                   <p className="font-medium text-tinta">Nenhuma empresa com esses filtros</p>
-                  <p>Tente remover algum filtro (use os chips acima) ou ampliar a localização.</p>
+                  <p>{ufForaDaBase ? `A base carregada não tem ${v.uf}; veja o aviso acima.` : "Tente remover algum filtro (use os chips acima) ou ampliar a localização."}</p>
                 </div>
               ) : (
                 <ul className="space-y-3">

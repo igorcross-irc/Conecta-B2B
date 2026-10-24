@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DuckDBInstance } from "@duckdb/node-api";
 import { describe, expect, it } from "vitest";
-import { abrir, lerCnaes, linhas, preparar } from "./parquet";
+import { abrir, filtroEstabelecimentos, lerCnaes, linhas, preparar } from "./parquet";
 
 async function fixture(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), "rfb-"));
@@ -42,5 +42,48 @@ describe("leitura da base da Receita em Parquet", () => {
     const fonte = await fixture();
     const c = await abrir(fonte);
     expect(await preparar(c, { fonte, ufs: ["RJ", "SP"], filiais: true })).toBe(3);
+  });
+});
+
+describe("recorte por nome e por CNPJ-raiz (Parquet local)", () => {
+  // A preparação cria tabelas temporárias: uma conexão nova para cada recorte.
+  const contar = async (fonte: string, o: Omit<Parameters<typeof preparar>[1], "fonte">) => preparar(await abrir(fonte), { fonte, ...o });
+
+  it("busca pelo nome na razão social (sem acento, qualquer UF) e no nome fantasia", async () => {
+    const fonte = await fixture();
+    expect(await contar(fonte, { ufs: [], busca: "padaria do ze" })).toBe(1); // razão social
+    expect(await contar(fonte, { ufs: [], busca: "pao quente" })).toBe(1); // só o nome fantasia ("Pão Quente")
+    expect(await contar(fonte, { ufs: [], busca: "atacadão", filiais: true })).toBe(2);
+    expect(await contar(fonte, { ufs: ["SP"], busca: "padaria" })).toBe(0);
+    expect(await contar(fonte, { ufs: [], busca: "padaria atacadao" })).toBe(0); // exige todas as palavras
+  });
+  it("traz os estabelecimentos dos CNPJs-raiz pedidos", async () => {
+    const fonte = await fixture();
+    expect(await contar(fonte, { ufs: [], raizes: ["33.000.167"], filiais: true })).toBe(2);
+    expect(await contar(fonte, { ufs: [], raizes: ["33000167"] })).toBe(1);
+  });
+});
+
+describe("recorte da importação (filtroEstabelecimentos)", () => {
+  const base = { fonte: "hf://x", filiais: false };
+  it("sem recorte extra: só ativas, matrizes e as UFs pedidas", () => {
+    expect(filtroEstabelecimentos({ ...base, ufs: ["sp", "RJ"] })).toBe("situacao_cadastral = '02' and uf in ('SP','RJ') and identificador_matriz_filial = '1'");
+    expect(filtroEstabelecimentos({ ...base, ufs: [], filiais: true })).toBe("situacao_cadastral = '02'");
+  });
+  it("raízes de CNPJ: normaliza e ignora lixo", () => {
+    const f = filtroEstabelecimentos({ ...base, ufs: [], raizes: ["33.000.167/0001-01", "1234", "abc"] });
+    expect(f).toContain("cnpj_basico in ('33000167','00001234')");
+  });
+  it("busca por nome exige todas as palavras, sem acento, na razão social ou no nome fantasia", () => {
+    const f = filtroEstabelecimentos({ ...base, ufs: ["SP"], busca: "Padaria Estréla" });
+    expect(f).toContain("like '%padaria%'");
+    expect(f).toContain("like '%estrela%'");
+    expect(f).toContain("from read_parquet('hf://x/empresas/*.parquet')");
+    expect(f).toContain("or (");
+  });
+  it("não deixa aspas do usuário quebrar o SQL", () => {
+    const f = filtroEstabelecimentos({ ...base, ufs: ["S'P"], busca: "o'brien" });
+    expect(f).toContain("'S''P'");
+    expect(f).not.toMatch(/like '%o'brien/);
   });
 });
