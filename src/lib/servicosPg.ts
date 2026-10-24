@@ -8,6 +8,7 @@ import { ORG_DEMO, USUARIO_DEMO } from "@/db/local";
 import { dominioSeguro } from "./providers/site";
 import type { Contato, Empresa, ProvedorContatos, ProvedorEmpresa } from "./providers/types";
 import { VERSAO_EMPRESA } from "./providers/types";
+import { montarCsv, type FormatoExportacao, type LinhaExportacao } from "./exportacao";
 import { limparFiltros, paraParametros, resumoFiltros, type FiltrosUrl } from "./filtrosUrl";
 import { ABERTURAS, PORTES, faixasDeSetores } from "./setores";
 import {
@@ -1230,11 +1231,31 @@ export function criarServicosPg({
     },
 
     /** Exporta só o que já foi revelado; nada pago vaza no arquivo. */
-    async exportarCsv(listaId: string): Promise<string> {
-      const linhas = (await servicos.contatosDaLista(listaId)).map((c) =>
-        [c.nome, c.cargo, c.email, c.telefone, c.linkedinUrl, c.origem].map(celulaCsv).join(","),
-      );
-      return ["Nome,Cargo,E-mail,Telefone,LinkedIn,Origem", ...linhas].join("\n");
+    async exportarCsv(listaId: string, formato: FormatoExportacao = "padrao"): Promise<string> {
+      const l = (await servicos.listas()).find((x) => x.id === listaId);
+      if (!l) throw new ErroDeNegocio("Lista não encontrada.", 404);
+      const gs = await guardados(l.contatoIds);
+      const cnpjs = [...new Set(gs.map((g) => g.cnpj))];
+      const empresas = cnpjs.length
+        ? await db.query<Linha>(
+            `select c.cnpj, c.dados->>'razaoSocial' as razao, c.dados->>'nomeFantasia' as fantasia,
+                    coalesce(i.dominio, c.dados->>'dominio') as dominio
+               from empresa_cache c left join base_empresa_info i on i.cnpj = c.cnpj where c.cnpj = any($1::text[])`,
+            [cnpjs],
+          )
+        : { rows: [] as Linha[] };
+      const porCnpj = new Map(empresas.rows.map((r) => [r.cnpj as string, r]));
+      // Só o que já foi revelado sai no arquivo: o dado pago continua oculto.
+      const linhas: LinhaExportacao[] = gs.map((g) => {
+        const v = visivel(g);
+        const e = porCnpj.get(g.cnpj);
+        return {
+          nome: v.nome, cargo: v.cargo, email: v.email, telefone: v.telefone, linkedin: v.linkedinUrl, origem: v.origem,
+          empresa: (e?.fantasia as string) || (e?.razao as string) || undefined,
+          site: (e?.dominio as string) || (g.cnpj.startsWith("site:") ? g.cnpj.slice(5) : undefined),
+        };
+      });
+      return montarCsv(formato, linhas);
     },
 
     /**

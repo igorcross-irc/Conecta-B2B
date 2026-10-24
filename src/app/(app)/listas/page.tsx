@@ -1,5 +1,6 @@
 "use client";
 
+import { FORMATOS, ROTULO_FORMATO } from "@/lib/exportacao";
 import { useCallback, useEffect, useState } from "react";
 
 interface ContatoLista {
@@ -71,12 +72,13 @@ export default function Listas() {
             <h2 className="font-medium">
               {l.nome} <span className="text-sm text-slate-500">({l.contatos.length})</span>
             </h2>
-            <a
-              href={`/api/listas/exportar?listaId=${l.id}`}
-              className="text-sm font-medium text-marca-700 hover:underline"
-            >
-              Exportar CSV
-            </a>
+            <span className="flex flex-wrap gap-3 text-sm font-medium">
+              {FORMATOS.map((f) => (
+                <a key={f} href={`/api/listas/exportar?listaId=${l.id}&formato=${f}`} className="text-marca-700 hover:underline">
+                  {f === "padrao" ? "Exportar CSV" : ROTULO_FORMATO[f]}
+                </a>
+              ))}
+            </span>
           </div>
           <ul className="divide-y divide-slate-100 text-sm">
             {l.contatos.map((c) => (

@@ -630,3 +630,18 @@ describe("pesquisas salvas e avisos", () => {
     expect((await db.query("select ultimo_aviso = current_date as hoje from pesquisa_salva")).rows[0]).toEqual({ hoje: true });
   });
 });
+
+describe("exportação para CRM", () => {
+  it("leva a empresa e só o que foi revelado", async () => {
+    const { s } = await novo();
+    const r = await busca(s, [], "k-crm");
+    const lista = await s.criarLista("Para o CRM");
+    await s.adicionarALista(lista.id, r.contatos.map((c) => c.id));
+    await s.revelar({ contatoId: r.contatos[0].id, campo: "email" });
+    const csv = await s.exportarCsv(lista.id, "hubspot");
+    const linhas = csv.replace("﻿", "").split("\r\n");
+    expect(linhas[0]).toMatch(/^First Name,Last Name,Email/);
+    expect(csv).toContain("EMPRESA DE TESTE SA");
+    expect(linhas.slice(1).filter((l) => /@/.test(l))).toHaveLength(1);
+  });
+});
