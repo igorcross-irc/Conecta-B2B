@@ -175,3 +175,11 @@ Críticas encontradas e o que foi feito:
 - **CNPJ cortado no celular**, nomes em MAIÚSCULAS, nome fantasia vazio, filtros ocupando a primeira tela, botão "Salvar todos" que salvava pessoas escondidas pelo filtro, respostas atrasadas de uma empresa anterior sobrescrevendo a nova, abas sem teclado.
 - **Testes duros:** 39 de unidade (tabela de homônimos, invariante aleatório com 200 rodadas, sócios PJ, origens, e-mails inferidos) e 5 e2e novos (desktop e celular).
 - **Não resolvido (decisão de produto):** a busca reaproveita contatos antigos mas cobra o mesmo crédito; a "base comum" mostra contatos trazidos por outros clientes (agora identificada, mas vale revisar a política de LGPD); contatos antigos guardados em MAIÚSCULAS só são formatados na exibição.
+
+## 24/10/2026 (noite, parte 5) — Pesquisar e Descobrir unificados + Minhas empresas (PR #6, empilhada na #5)
+
+- **Pesquisar e Descobrir viraram uma área só.** Uma caixa de busca no topo da Pesquisa aceita nome, CNPJ ou site: CNPJ e site abrem a empresa direto; nome lista resultados. O item "Descobrir" saiu do menu; links antigos (`/descobrir?alvo=`, e-mails de aviso) redirecionam.
+- **Página única da empresa** `/empresa/[alvo]` (CNPJ ou `site:dominio`): ficha, pessoas, informações extras e sócios. Tem "Voltar para os resultados" que devolve a mesma lista filtrada (só volta para telas do próprio app). Erro de carga mostra "Tentar de novo"; ficha aparece mesmo se os complementos falharem.
+- **Minhas empresas** `/empresas`: cada empresa uma vez, com pessoas colhidas, e-mails e telefones revelados, listas, última busca e data; filtro por nome, cidade ou CNPJ; totais no topo. Reabrir a empresa mostra todas as pessoas já colhidas (de qualquer busca, sem limite de 24 h) sem nova cobrança.
+- Serviços novos: `empresasTrabalhadas` e `contatosDaEmpresa` (testados também sob o papel limitado, com isolamento entre organizações). 25 testes e2e, 234 de unidade.
+- Decisão em aberto: Minhas empresas é por organização (toda a equipe vê tudo); se quiser "só as minhas" por usuário, precisa guardar quem fez cada busca.

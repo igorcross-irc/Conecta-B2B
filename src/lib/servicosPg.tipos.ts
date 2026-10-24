@@ -62,6 +62,25 @@ export interface Mercado {
   /** Falso se a base da Receita ainda não foi carregada. */
   baseReceita: boolean;
 }
+/** Uma empresa em que a organização já trabalhou, com tudo o que foi colhido sobre ela. */
+export interface EmpresaTrabalhada {
+  /** CNPJ (14 dígitos) ou "site:dominio". */
+  cnpj: string;
+  nome: string;
+  razaoSocial?: string;
+  municipio?: string;
+  uf?: string;
+  porte?: string;
+  atividade?: string;
+  pessoas: number;
+  emailsRevelados: number;
+  telefonesRevelados: number;
+  listas: number;
+  buscas: number;
+  /** Estado da última busca de pessoas. */
+  ultimaBusca?: "em_andamento" | "concluida" | "erro";
+  ultimaAtividade: string;
+}
 export interface ResultadoPesquisa { itens: ItemPesquisa[]; total: number; baseReceita: boolean; sites: string[]; temPerfil?: boolean }
 
 export interface EstadoBusca {

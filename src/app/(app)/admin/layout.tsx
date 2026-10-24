@@ -7,7 +7,7 @@ import { contexto } from "@/lib/app";
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
   await connection();
   const { sessao } = await contexto();
-  if (!sessao.operadora) redirect("/descobrir");
+  if (!sessao.operadora) redirect("/pesquisar");
   return (
     <div className="space-y-5">
       <header>

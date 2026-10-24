@@ -22,7 +22,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const saldo = await servicos.saldo();
   const itens: ItemMenu[] = [
     { href: "/pesquisar", rotulo: "Pesquisar", icone: "Busca", secao: "Prospecção" },
-    { href: "/descobrir", rotulo: "Descobrir", icone: "Descobrir", secao: "Prospecção" },
+    { href: "/empresas", rotulo: "Minhas empresas", icone: "Predio", secao: "Prospecção" },
     { href: "/mercado", rotulo: "Mercado", icone: "Grafico", secao: "Prospecção" },
     { href: "/base", rotulo: "Base comum", icone: "Base", secao: "Prospecção" },
     { href: "/listas", rotulo: "Listas", icone: "Listas", secao: "Prospecção" },
@@ -41,7 +41,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         saldo={saldo}
         atalhos={[
           { href: "/pesquisar", rotulo: "Pesquisar", icone: "Busca" },
-          { href: "/descobrir", rotulo: "Descobrir", icone: "Descobrir" },
+          { href: "/empresas", rotulo: "Empresas", icone: "Predio" },
           { href: "/listas", rotulo: "Listas", icone: "Listas" },
           { href: "/base", rotulo: "Base", icone: "Base" },
         ]}

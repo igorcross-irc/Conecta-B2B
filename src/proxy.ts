@@ -10,7 +10,12 @@ export default function proxy(req: NextRequest) {
 
 export const config = {
   matcher: [
+    "/pesquisar/:path*",
+    "/empresa/:path*",
+    "/empresas/:path*",
     "/descobrir/:path*",
+    "/mercado/:path*",
+    "/parecidas/:path*",
     "/base/:path*",
     "/listas/:path*",
     "/importar/:path*",

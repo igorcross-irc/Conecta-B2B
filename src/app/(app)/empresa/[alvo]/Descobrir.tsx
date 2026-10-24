@@ -2,7 +2,7 @@
 
 import { Abordagem } from "./Abordagem";
 import { Enriquecimento, useEnriquecimento } from "./Enriquecimento";
-import { Busca as IconeBusca, Email, Externo, Mapa, Pessoa, Predio, Relogio, Telefone } from "@/components/Icones";
+import { Busca as IconeBusca, Email, Externo, Mapa, Pessoa, Relogio, Telefone } from "@/components/Icones";
 import { useEffect, useRef, useState } from "react";
 import { DEPARTAMENTOS, SENIORIDADES, classificarCargo, pesoDoCargo } from "@/lib/cargos";
 import { descreverOrigem, nivelDeConfianca, type TomOrigem } from "@/lib/origem";
@@ -197,34 +197,22 @@ export default function Descobrir({ cnpjInicial = "", iaAtiva = false, custos = 
     if (!atual()) return;
     setEmpresa(ficha);
     // O resto é complemento: se falhar, a ficha continua na tela.
-    const [sin, disp, ultima] = await Promise.all([
+    const [sin, disp, ultima, colhidas] = await Promise.all([
       chamar<Sinal[]>(`/api/sinais?cnpj=${q}`).catch(() => [] as Sinal[]),
       chamar<{ disponiveis: number }>(`/api/decisores/disponiveis?cnpj=${q}`).catch(() => ({ disponiveis: 0 })),
       // Retoma uma busca recente (em andamento ou concluída) desta empresa.
       chamar<Busca | null>(`/api/decisores/busca?cnpj=${q}`).catch(() => null),
+      // Tudo o que a organização já colheu para esta empresa, de qualquer busca antiga (sem custo).
+      chamar<Contato[]>(`/api/empresa/pessoas?cnpj=${q}`).catch(() => [] as Contato[]),
     ]);
     if (!atual()) return;
     setSinais(sin);
     setDisponiveis(disp.disponiveis);
     aplicarBusca(ultima);
-  };
-
-  const buscarEmpresa = (e: React.FormEvent) => {
-    e.preventDefault();
-    setContatos([]);
-    setBusca(null);
-    setDisponiveis(null);
-    setEmpresa(null);
-    setCandidatos(null);
-    void executar(async () => {
-      const entrada = cnpj.trim();
-      const digitos = entrada.replace(/\D/g, "");
-      if (digitos.length === 14) return carregar(digitos);
-      // Qualquer outra coisa é um site: o próprio endereço é o centralizador das buscas, sem exigir CNPJ.
-      const dominio = entrada.toLowerCase().replace(/^site:/, "").replace(/^https?:\/\//, "").replace(/[/?#].*$/, "").replace(/^www\./, "");
-      if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(dominio)) throw new Error("Informe um CNPJ (14 dígitos) ou o endereço do site (ex.: empresa.com.br).");
-      return carregar(`site:${dominio}`);
-    });
+    if (colhidas.length > 0) {
+      setContatos(colhidas);
+      setAba("pessoas");
+    }
   };
 
   // Chegou por um link (ex.: "Ver decisores" na pesquisa): já carrega a empresa, sem exigir outro clique.
@@ -310,30 +298,14 @@ export default function Descobrir({ cnpjInicial = "", iaAtiva = false, custos = 
 
   return (
     <div className="space-y-5">
-      <header className="cabecalho-pagina">
-        <div>
-          <h1 className="titulo-pagina">Descobrir</h1>
-          <p className="sub-pagina">Veja a ficha completa de uma empresa e encontre quem decide nela.</p>
+      {saldo !== null && <p className="selo w-fit">Saldo: {saldo} créditos</p>}
+
+      {erro && (
+        <div role="alert" className="aviso-erro flex flex-wrap items-center justify-between gap-2">
+          <span>{erro}</span>
+          {!empresa && cnpjInicial && <button type="button" className="btn-sec" onClick={() => void executar(() => carregar(cnpjInicial))}>Tentar de novo</button>}
         </div>
-        {saldo !== null && <p className="selo">Saldo: {saldo} créditos</p>}
-      </header>
-
-      <form onSubmit={buscarEmpresa} className="cartao flex flex-col gap-3 sm:flex-row sm:items-end">
-        <label className="min-w-0 flex-1">
-          <span className="rotulo">CNPJ ou site da empresa</span>
-          <input
-            value={cnpj}
-            onChange={(e) => setCnpj(e.target.value)}
-            placeholder="00.000.000/0000-00 ou empresa.com.br"
-            className="input mt-1"
-            inputMode="text"
-            autoComplete="off"
-          />
-        </label>
-        <button disabled={ocupado} className="btn-primario sm:min-w-40"><IconeBusca width={18} height={18} /> {ocupado && !empresa ? "Buscando…" : "Buscar empresa"}</button>
-      </form>
-
-      {erro && <p role="alert" className="aviso-erro">{erro}</p>}
+      )}
       {aviso && <p className="aviso-ok">{aviso}</p>}
 
       {candidatos && (
@@ -353,13 +325,7 @@ export default function Descobrir({ cnpjInicial = "", iaAtiva = false, custos = 
         </section>
       )}
 
-      {!empresa && !candidatos && !ocupado && (
-        <div className="vazio">
-          <Predio width={36} height={36} className="text-slate-400" />
-          <p className="font-medium text-tinta">Digite um CNPJ ou o site de uma empresa</p>
-          <p>Ou use <a className="text-marca-700 underline" href="/pesquisar">Pesquisar</a> para encontrar empresas por atividade, local e porte.</p>
-        </div>
-      )}
+      {!empresa && ocupado && <div className="esqueleto h-40" aria-busy="true" aria-label="Carregando a empresa" />}
 
       {empresa && (
         <>
