@@ -416,6 +416,9 @@ export default function Descobrir({ cnpjInicial = "", iaAtiva = false }: { cnpjI
                       </ul>
                     </details>
                   )}
+                  <a className="btn-sec" href={`/parecidas?cnpj=${empresa.cnpj}`}>
+                    <Predio width={16} height={16} /> Empresas parecidas com esta
+                  </a>
                   {empresa.cnaePrincipal?.codigo && empresa.uf && (
                     <a className="btn-sec" href={`/pesquisar?segmento=${String(empresa.cnaePrincipal.codigo).slice(0, 5)}&uf=${empresa.uf}&cidade=${encodeURIComponent(empresa.municipio ?? "")}`}>
                       <IconeBusca width={16} height={16} /> Empresas do mesmo segmento em {empresa.municipio ?? empresa.uf}

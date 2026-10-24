@@ -161,3 +161,9 @@ Tudo abaixo está testado (153 testes + 49 sob o papel limitado, typecheck, lint
 
 - **Tela Mercado** (`/mercado`): tamanho e distribuição do recorte escolhido (estado, cidade, setor, porte): total de matrizes ativas, % com e-mail/telefone cadastral, por setor, porte, cidade (15 maiores), estado, idade da empresa e aberturas por ano. Barras em CSS, clique leva à Pesquisa já filtrada. Sem filtro não calcula (varrer a base inteira não ajuda). Os filtros da pesquisa viraram `construirFiltro`, usado por `pesquisar` e `mercado`.
 - **Ideias seguintes** (não feitas): empresas parecidas com a lista de clientes, espaço livre contra o CRM, grupos por sócios (precisa da base de sócios), mapa de calor por bairro.
+
+## 24/10/2026 (noite, parte 3) — Empresas parecidas (branch `claude/empresas-parecidas`)
+
+- **`/parecidas?cnpj=`**: dado o CNPJ de uma empresa da base da Receita, lista as mais parecidas do mesmo setor e estado, com nota de 0 a 100 (atividade igual 45 ou do mesmo grupo 25, porte 20, mesma cidade 20 ou mesmo estado 10, idade até 3 anos de diferença 15) e o que têm em comum. Atalhos nos cartões da Pesquisa e na ficha de Descobrir. Só funciona para empresas que estão na base carregada. Sem custo em créditos.
+- **Pesquisa de concorrentes (24/10):** o que ainda falta frente a Apollo/ZoomInfo/Lusha/Cognism/Econodata: tecnologias do site, sinais de compra (filial, mudança de sócio/endereço), cadência de e-mails, extensão de navegador, CRM por API, comitê de compra, verificação paga de e-mail e telefone, identificação de visitantes do site.
+- **Próximos da lista:** gatilhos de abordagem nos alertas, comitê de compra na ficha, tecnologias detectadas no site.
