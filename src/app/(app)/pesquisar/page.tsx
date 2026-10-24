@@ -1,3 +1,4 @@
+import { ROTULO_DIMENSAO, type Dimensao } from "@/lib/aderencia";
 import Link from "next/link";
 import { connection } from "next/server";
 import { contexto } from "@/lib/app";
@@ -43,7 +44,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
     porte: lista(sp, "porte").filter((x) => (PORTES as readonly string[]).includes(x)),
     abertura: ABERTURAS.some((a) => a.id === sp.abertura) ? (sp.abertura as string) : "",
     email: sp.email === "1", telefone: sp.telefone === "1", filiais: sp.filiais === "1",
-    ordem: sp.ordem === "recentes" ? "recentes" : "nome",
+    ordem: sp.ordem === "recentes" ? "recentes" : sp.ordem === "aderencia" ? "aderencia" : "nome",
   };
   const pagina = Math.max(0, Number(texto(sp, "pagina")) || 0);
   const erro = texto(sp, "erro");
@@ -80,7 +81,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
   const [salvas, cobertura, r] = await Promise.all([
     servicos.pesquisasSalvas(),
     servicos.cobertura().catch(() => []),
-    servicos.pesquisar({ ...filtros, setores: v.setores, porte: v.porte, abertura: v.abertura || undefined, comEmail: v.email, comTelefone: v.telefone, ordem: v.ordem === "recentes" ? "recentes" : "nome", incluirFiliais: v.filiais, pagina }),
+    servicos.pesquisar({ ...filtros, setores: v.setores, porte: v.porte, abertura: v.abertura || undefined, comEmail: v.email, comTelefone: v.telefone, ordem: v.ordem as "nome" | "recentes" | "aderencia", aderencia: true, incluirFiliais: v.filiais, pagina }),
   ]);
 
   const ufsBase = cobertura.map((c) => c.uf);
@@ -166,6 +167,11 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
                 <div className="flex items-center gap-2 text-sm" role="group" aria-label="Ordenar">
                   <Link href={href({ ordem: "nome", pagina: "0" })} className={v.ordem === "nome" ? "chip-ativo" : "chip"}>A–Z</Link>
                   <Link href={href({ ordem: "recentes", pagina: "0" })} className={v.ordem === "recentes" ? "chip-ativo" : "chip"}>Mais recentes</Link>
+                  {r.temPerfil ? (
+                    <Link href={href({ ordem: "aderencia", pagina: "0" })} className={v.ordem === "aderencia" ? "chip-ativo" : "chip"}>Aderência ao perfil</Link>
+                  ) : (
+                    <Link href="/configuracoes#perfil-ideal" className="chip" title="Defina o cliente ideal para ordenar por aderência">Definir perfil ideal</Link>
+                  )}
                 </div>
               </div>
 
@@ -230,6 +236,11 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
                           <p className="truncate text-xs text-slate-500">{i.razaoSocial} · {i.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}</p>
                           <p className="mt-1 truncate text-sm text-slate-600">{[i.bairro, i.municipio, i.uf].filter(Boolean).join(" · ")}{i.atividade ? ` — ${i.atividade}` : ""}</p>
                           <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
+                            {i.aderencia !== undefined && (
+                              <span className={i.aderencia >= 70 ? "selo" : "selo-cinza"} title={(i.motivos ?? []).map((m) => `${ROTULO_DIMENSAO[m.dimensao as Dimensao]}: ${m.ok ? "combina" : "não combina"}`).join(" · ")}>
+                                {i.aderencia}% aderente
+                              </span>
+                            )}
                             {i.porte && <span className="selo-cinza">{i.porte}</span>}
                             {anos !== undefined && <span className="selo-cinza"><Relogio width={12} height={12} className="mr-1" />{anos < 1 ? "menos de 1 ano" : `${anos} ano${anos > 1 ? "s" : ""}`}</span>}
                             {!i.matriz && <span className="selo-cinza">Filial</span>}

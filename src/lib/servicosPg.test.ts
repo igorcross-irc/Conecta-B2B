@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { abrirBancoLocal, ORG_DEMO, USUARIO_DEMO } from "@/db/local";
+import { pontuar } from "./aderencia";
 import { ProvedorDemo } from "./providers/mock";
 import type { Empresa, ProvedorEmpresa } from "./providers/types";
 import { ErroDeNegocio } from "./servicos";
@@ -766,5 +767,35 @@ describe("pesquisa para exportação", () => {
     expect(completo.total).toBe(3);
     expect(completo.itens.find((i) => i.cnpj === "33000167000101")).toMatchObject({ email: "a@a.com", telefone: "2133334444", cnae: 1091102 });
     expect((await s.pesquisar({ uf: "RJ", porPagina: 2, pagina: 1 })).itens).toHaveLength(1);
+  }, 30000);
+});
+
+describe("perfil de cliente ideal e aderência", () => {
+  it("salva o perfil limpo, ordena por aderência e a nota do SQL bate com a do TypeScript", async () => {
+    const { db, s } = await novo();
+    expect(await s.perfilIdeal()).toMatchObject({ setores: [], ufs: [] });
+    const salvo = await s.salvarPerfilIdeal({ setores: ["alimentos", "inexistente"], portes: ["Micro empresa"], ufs: ["RJ", "XX"], idadeMin: 2, exigeEmail: true });
+    expect(salvo).toMatchObject({ setores: ["alimentos"], portes: ["Micro empresa"], ufs: ["RJ"], idadeMin: 2, exigeEmail: true });
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, matriz, situacao, cnae, uf, municipio, porte, aberta_em, email, busca) values
+       ('33000167000101','Perfeita',true,'ATIVA',1091102,'RJ','NITEROI','Micro empresa','2015-01-01','a@a.com','perfeita'),
+       ('11222333000181','Metade',true,'ATIVA',1091102,'RJ','NITEROI','Demais','2015-01-01',null,'metade'),
+       ('00000000000191','Nenhuma',true,'ATIVA',4711301,'SP','SAO PAULO','Demais','2025-12-01',null,'nenhuma')`,
+    );
+    const r = await s.pesquisar({ abertaDesde: "2000-01-01", aderencia: true, ordem: "aderencia", completo: true });
+    expect(r.temPerfil).toBe(true);
+    expect(r.itens.map((i) => i.razaoSocial)).toEqual(["Perfeita", "Metade", "Nenhuma"]);
+    for (const i of r.itens) {
+      const ts = pontuar(salvo, { cnae: i.cnae, porte: i.porte, uf: i.uf, municipio: i.municipio, abertaEm: i.abertaEm, temEmail: i.temEmail, temTelefone: i.temTelefone });
+      expect(i.aderencia).toBe(ts?.nota);
+    }
+    expect(r.itens[0].aderencia).toBe(100);
+    expect(r.itens[2].aderencia).toBe(0);
+  }, 30000);
+
+  it("sem perfil não calcula nota", async () => {
+    const { s } = await novo();
+    const r = await s.pesquisar({ uf: "RJ", aderencia: true });
+    expect(r.temPerfil).toBe(false);
   }, 30000);
 });

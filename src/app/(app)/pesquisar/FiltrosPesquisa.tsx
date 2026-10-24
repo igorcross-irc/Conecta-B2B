@@ -182,13 +182,14 @@ export function FiltrosPesquisa({ valores, ativos }: { valores: ValoresFiltro; a
             <p className="text-xs text-slate-500">Dados cadastrais da Receita. Costumam ser da contabilidade; para o decisor, use “Descobrir”.</p>
           </Grupo>
 
-          <Grupo titulo="Opções" aberto={valores.filiais || valores.ordem === "recentes"}>
+          <Grupo titulo="Opções" aberto={valores.filiais || valores.ordem !== "nome"}>
             <label className="opcao"><input type="checkbox" name="filiais" value="1" defaultChecked={valores.filiais} />Incluir filiais</label>
             <label className="block text-sm">
               <span className="rotulo">Ordenar por</span>
               <select name="ordem" defaultValue={valores.ordem} className="input mt-1">
                 <option value="nome">Nome (A–Z)</option>
                 <option value="recentes">Mais recentes primeiro</option>
+                <option value="aderencia">Maior aderência ao perfil ideal</option>
               </select>
             </label>
           </Grupo>

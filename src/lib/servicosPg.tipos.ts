@@ -3,6 +3,7 @@ import type { Db } from "@/db/conexao";
 import type { TabelaCustos } from "./credits";
 import type { Registrador } from "./monitor";
 import type { Contato, Empresa, ProvedorContatos, ProvedorEmpresa } from "./providers/types";
+import type { PerfilIdeal } from "./aderencia";
 import type { FiltrosUrl } from "./filtrosUrl";
 import { ErroDeNegocio, type ContatoGuardado, type ContatoVisivel } from "./servicos";
 
@@ -15,7 +16,9 @@ export interface PesquisaFiltros {
   abertura?: string;
   comEmail?: boolean;
   comTelefone?: boolean;
-  ordem?: "nome" | "recentes";
+  ordem?: "nome" | "recentes" | "aderencia";
+  /** Calcula a aderência de cada empresa ao perfil de cliente ideal da organização (e ordena por ela com ordem "aderencia"). */
+  aderencia?: boolean;
   /** Só empresas abertas a partir desta data (AAAA-MM-DD). */
   abertaDesde?: string;
   incluirFiliais?: boolean; pagina?: number;
@@ -36,10 +39,14 @@ export interface ItemPesquisa {
   cnpj: string; razaoSocial: string; nomeFantasia?: string; municipio?: string; uf?: string;
   bairro?: string; atividade?: string; dominio?: string;
   porte?: string; abertaEm?: string; temEmail: boolean; temTelefone: boolean; matriz: boolean;
+  cnae?: number;
   /** Só com `completo`: dados cadastrais da Receita. */
-  email?: string; telefone?: string; cnae?: number;
+  email?: string; telefone?: string;
+  /** 0 a 100, só quando a organização tem perfil ideal e a pesquisa pediu aderência. */
+  aderencia?: number;
+  motivos?: { dimensao: string; ok: boolean }[];
 }
-export interface ResultadoPesquisa { itens: ItemPesquisa[]; total: number; baseReceita: boolean; sites: string[] }
+export interface ResultadoPesquisa { itens: ItemPesquisa[]; total: number; baseReceita: boolean; sites: string[]; temPerfil?: boolean }
 
 export interface EstadoBusca {
   id: string;
@@ -168,6 +175,7 @@ export interface Cruzados {
   disponiveisNoPool(cnpj: string): Promise<number>;
   listas(): Promise<ListaPg[]>;
   pesquisar(f?: PesquisaFiltros): Promise<ResultadoPesquisa>;
+  perfilIdeal(): Promise<PerfilIdeal>;
   registrarOptOut(email: string): Promise<{ contatosAfetados: number }>;
   resolverSite(entrada: string): Promise<{
     dominio: string;

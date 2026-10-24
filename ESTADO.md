@@ -147,3 +147,9 @@ Tudo abaixo está testado (153 testes + 49 sob o papel limitado, typecheck, lint
 - **Testes de ponta a ponta** (Playwright, `npm run test:e2e`, 14 testes em computador e celular) e job `e2e` no CI. Modo demonstração não consulta fontes externas na ficha.
 - **`servicosPg.ts` dividido** em 10 grupos (`servicosPg.<grupo>.ts`), tipos (`.tipos`) e auxiliares (`.contexto`), sem mudar comportamento (53 testes de serviços, também sob o papel limitado). Para um grupo chamar outro, o contrato fica em `Cruzados` (tipos explícitos, evita referência circular).
 - **Cotação do Neon** em `docs/cotacao-neon.md` (medido: 290 bytes por empresa; Brasil inteiro cabe em ~8 GB; custo estimado US$ 13 a 82 por mês, a computação é o que pesa). **Integração com CRM:** `docs/integracao-crm.md`.
+
+## 24/10/2026 (noite) — CRM por arquivo e perfil de cliente ideal
+
+- **Exportação de empresas da pesquisa** (`/api/pesquisar/exportar`): CSV padrão e formatos de importação do HubSpot, RD Station e Pipedrive, com as mesmas filtragens da tela (até 5.000 por arquivo, 10 por hora por usuário, sem gastar crédito). Exportação de pessoas ganhou a coluna CNPJ. A integração por API fica para depois (`docs/integracao-crm.md`).
+- **Perfil de cliente ideal e aderência** (migração 0014, tabela `perfil_ideal`, **aplicada no Neon de produção em 24/10/2026** após ensaio revertido): o administrador marca setores, portes, estados, cidades, idade e exigência de e-mail/telefone em Configurações; a Pesquisar mostra "N% aderente" em cada empresa (com os motivos ao passar o mouse) e ordena por aderência. A nota existe em TypeScript (explica) e em SQL (ordena a pesquisa inteira); um teste confere que as duas dão o mesmo número. Pesos: setor 30, região 25, porte 20, idade 15, contato 10; só conta o que o perfil define.
+- **Espaço no Neon:** decisão de ir para ~12 GB (Brasil inteiro, matrizes ≈ 8,5 GB + índice trigrama ≈ 3 GB). A troca de plano é feita pelo Igor no painel do Neon.

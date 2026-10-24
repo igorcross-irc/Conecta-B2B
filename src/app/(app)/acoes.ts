@@ -45,6 +45,19 @@ export async function renomearOrganizacao(_: Resultado, d: FormData): Promise<Re
   }, "/", );
 }
 
+export async function salvarPerfilIdealAcao(_: Resultado, d: FormData): Promise<Resultado> {
+  return executar(async () => {
+    const lista = (k: string) => d.getAll(k).filter((x): x is string => typeof x === "string");
+    await (await contexto()).servicos.salvarPerfilIdeal({
+      setores: lista("setor"), portes: lista("porte"), ufs: lista("uf"),
+      cidades: texto(d, "cidades").split(",").map((x) => x.trim()).filter(Boolean),
+      idadeMin: texto(d, "idadeMin"), idadeMax: texto(d, "idadeMax"),
+      exigeEmail: d.get("exigeEmail") === "1", exigeTelefone: d.get("exigeTelefone") === "1",
+    });
+    return { ok: "Perfil de cliente ideal salvo. A pesquisa agora pode ordenar por aderência." };
+  }, "/configuracoes");
+}
+
 export async function convidar(_: Resultado, d: FormData): Promise<Resultado> {
   return executar(async () => {
     const papel = texto(d, "papel") === "administrador" ? "administrador" : "membro";

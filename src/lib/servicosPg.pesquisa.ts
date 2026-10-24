@@ -1,6 +1,8 @@
+import { limparPerfil, pontuar, sqlAderencia, type PerfilIdeal, PERFIL_VAZIO } from "./aderencia";
 import { normalizarBusca } from "./cnpj";
+import { UFS } from "./ufs";
 import { limparFiltros, paraParametros, resumoFiltros, type FiltrosUrl } from "./filtrosUrl";
-import { ABERTURAS, PORTES, faixasDeSetores } from "./setores";
+import { ABERTURAS, PORTES, SETORES, faixasDeSetores } from "./setores";
 import { ErroDeNegocio } from "./servicos";
 import { Linha, PesquisaFiltros, PesquisaSalva, ResultadoPesquisa, UUID } from "./servicosPg.tipos";
 import type { Ctx } from "./servicosPg.contexto";
@@ -61,14 +63,19 @@ export function criarPesquisa(c: Ctx) {
       if (f.comEmail) where.push("e.email is not null");
       if (f.comTelefone) where.push("e.telefone is not null");
       const w = where.join(" and ");
+      // Aderência ao perfil de cliente ideal: a nota sai do SQL (para ordenar a pesquisa inteira) e os motivos, do TypeScript.
+      const perfil = f.aderencia || f.ordem === "aderencia" ? await servicos.perfilIdeal() : undefined;
+      const exprAderencia = perfil ? sqlAderencia(perfil, add) : null;
+      const ordem = f.ordem === "aderencia" && exprAderencia ? "aderencia desc, e.razao_social" : f.ordem === "recentes" ? "e.aberta_em desc nulls last, e.razao_social" : "e.razao_social";
       // Uma só varredura: a contagem vem junto da página (count(*) over ()), em vez de duas consultas.
       const r = await db.query(
         `select count(*) over ()::int as total_geral, e.cnpj, e.razao_social, e.nome_fantasia, e.municipio, e.uf, e.bairro, e.cnae, c.descricao as atividade,
                 e.porte, e.aberta_em, e.matriz, (e.email is not null) as tem_email, (e.telefone is not null) as tem_telefone,
-                ${f.completo ? "e.email as email_cad, e.telefone as telefone_cad, e.cnae as cnae_cod," : ""}
+                e.cnae as cnae_cod, ${exprAderencia ? `${exprAderencia} as aderencia,` : ""}
+                ${f.completo ? "e.email as email_cad, e.telefone as telefone_cad," : ""}
                 (select i.dominio from base_empresa_info i where i.cnpj = e.cnpj) as dominio
            from rf_estabelecimento e left join rf_cnae c on c.codigo = e.cnae
-          where ${w} order by ${f.ordem === "recentes" ? "e.aberta_em desc nulls last, e.razao_social" : "e.razao_social"} limit ${porPagina} offset ${add(pagina * porPagina)}`,
+          where ${w} order by ${ordem} limit ${porPagina} offset ${add(pagina * porPagina)}`,
         p,
       );
       let totalGeral = r.rows.length ? Number(r.rows[0].total_geral) : 0;
@@ -89,6 +96,7 @@ export function criarPesquisa(c: Ctx) {
         : [];
       return {
         total: totalGeral,
+        temPerfil: Boolean(perfil && exprAderencia),
         baseReceita: await temBaseReceita(),
         sites,
         itens: r.rows.map((x) => ({
@@ -102,12 +110,30 @@ export function criarPesquisa(c: Ctx) {
           dominio: (x.dominio as string) ?? undefined,
           porte: (x.porte as string) ?? undefined,
           abertaEm: x.aberta_em ? new Date(x.aberta_em as string).toISOString().slice(0, 10) : undefined,
-          ...(f.completo ? { email: (x.email_cad as string) ?? undefined, telefone: (x.telefone_cad as string) ?? undefined, cnae: x.cnae_cod == null ? undefined : Number(x.cnae_cod) } : {}),
+          cnae: x.cnae_cod == null ? undefined : Number(x.cnae_cod),
+          ...(f.completo ? { email: (x.email_cad as string) ?? undefined, telefone: (x.telefone_cad as string) ?? undefined } : {}),
+          ...(perfil && x.aderencia != null ? { aderencia: Number(x.aderencia), motivos: pontuar(perfil, { cnae: x.cnae_cod == null ? undefined : Number(x.cnae_cod), porte: (x.porte as string) ?? undefined, uf: (x.uf as string) ?? undefined, municipio: (x.municipio as string) ?? undefined, abertaEm: x.aberta_em ? new Date(x.aberta_em as string).toISOString().slice(0, 10) : undefined, temEmail: x.tem_email === true, temTelefone: x.tem_telefone === true })?.motivos } : {}),
           temEmail: x.tem_email === true,
           temTelefone: x.tem_telefone === true,
           matriz: x.matriz === true,
         })),
       };
+    },
+    /** Perfil de cliente ideal da organização (vazio se ainda não foi definido). */
+    async perfilIdeal(): Promise<PerfilIdeal> {
+      const r = await um<{ perfil: unknown }>("select perfil from perfil_ideal where organizacao_id = $1", [org]);
+      return r ? limparPerfil(r.perfil, SETORES.map((s) => s.id), [...PORTES], UFS.map(([sigla]) => sigla)) : PERFIL_VAZIO;
+    },
+    async salvarPerfilIdeal(bruto: unknown): Promise<PerfilIdeal> {
+      c.exigirAdmin();
+      const perfil = limparPerfil(bruto, SETORES.map((s) => s.id), [...PORTES], UFS.map(([sigla]) => sigla));
+      await db.query(
+        `insert into perfil_ideal (organizacao_id, perfil, atualizado_por) values ($1, $2::jsonb, $3)
+         on conflict (organizacao_id) do update set perfil = excluded.perfil, atualizado_por = excluded.atualizado_por, atualizado_em = now()`,
+        [org, JSON.stringify(perfil), ator.usuarioId],
+      );
+      await auditar("organizacao.perfil_ideal", org, { dimensoes: Object.keys(perfil).length });
+      return perfil;
     },
     /** UFs que existem na base da Receita carregada e quantas empresas cada uma tem (a base não cobre o Brasil inteiro). */
     async cobertura(): Promise<{ uf: string; empresas: number }[]> {

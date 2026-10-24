@@ -31,7 +31,7 @@ beforeAll(async () => {
       select nullif(current_setting('request.jwt.sub', true), '')::uuid $$;
     create role cliente;
   `);
-  for (const arquivo of ["0001_init.sql", "0002_onboarding.sql", "0003_pool_e_buscas.sql", "0004_plataforma.sql", "0005_alvo_e_receita.sql", "0007_limite_e_optout.sql", "0008_papel_app.sql", "0009_pesquisas_salvas.sql", "0010_api_chaves.sql", "0011_enriquecimento.sql", "0012_municipios.sql", "0013_monitoramento.sql"]) {
+  for (const arquivo of ["0001_init.sql", "0002_onboarding.sql", "0003_pool_e_buscas.sql", "0004_plataforma.sql", "0005_alvo_e_receita.sql", "0007_limite_e_optout.sql", "0008_papel_app.sql", "0009_pesquisas_salvas.sql", "0010_api_chaves.sql", "0011_enriquecimento.sql", "0012_municipios.sql", "0013_monitoramento.sql", "0014_perfil_ideal.sql"]) {
     await db.exec(readFileSync(join(process.cwd(), "supabase/migrations", arquivo), "utf8"));
   }
   await db.exec(`
