@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Sparkles } from "@/components/Icones";
 import { paraParametros } from "@/lib/filtrosUrl";
 
 export function BuscaNatural() {
@@ -33,8 +34,10 @@ export function BuscaNatural() {
   }
 
   return (
-    <form onSubmit={entender} className="cartao space-y-2">
-      <label className="text-sm font-medium" htmlFor="busca-natural">Descreva o que você procura</label>
+    <form onSubmit={entender} className="cartao-destaque space-y-2">
+      <label className="flex items-center gap-2 text-sm font-semibold text-marca-800" htmlFor="busca-natural">
+        <Sparkles width={18} height={18} /> Pergunte em português
+      </label>
       <div className="flex flex-col gap-2 sm:flex-row">
         <input
           id="busca-natural"
@@ -42,10 +45,11 @@ export function BuscaNatural() {
           onChange={(e) => setTexto(e.target.value)}
           maxLength={400}
           placeholder="Padarias abertas há menos de 3 anos em Niterói, com telefone"
-          className="campo flex-1"
+          className="input flex-1"
         />
         <button className="btn-primario" disabled={ocupado || !texto.trim()}>{ocupado ? "Entendendo…" : "Buscar com IA"}</button>
       </div>
+      <p className="text-xs text-slate-500">A IA só preenche os filtros ao lado; você confere e ajusta antes de ver os resultados.</p>
       {erro && <p role="alert" className="aviso-erro">{erro}</p>}
     </form>
   );

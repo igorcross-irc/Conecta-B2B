@@ -1037,6 +1037,29 @@ export function criarServicosPg({
       return r ? { orgId: r.organizacao_id, usuarioId: r.usuario_id } : null;
     },
 
+    /** Sugestões ao digitar na pesquisa: cidades (da lista de municípios da base) e atividades (CNAE). */
+    async sugerir(campo: "cidade" | "segmento", q: string, uf?: string): Promise<{ valor: string; detalhe?: string }[]> {
+      const t = normalizarBusca(q);
+      if (t.length < 2) return [];
+      if (campo === "cidade") {
+        const u = (uf ?? "").trim().toUpperCase().slice(0, 2);
+        const r = await db.query<Linha>(
+          `select nome, uf, qtd from rf_municipio where nome_busca like $1 || '%' ${u ? "and uf = $2" : ""}
+            order by qtd desc limit 8`,
+          u ? [t, u] : [t],
+        );
+        return r.rows.map((x) => ({ valor: x.nome as string, detalhe: `${x.uf as string} · ${Number(x.qtd).toLocaleString("pt-BR")} empresas` }));
+      }
+      const digitos = t.replace(/\D/g, "");
+      const r = await db.query<Linha>(
+        digitos.length >= 3
+          ? "select codigo, descricao from rf_cnae where codigo::text like $1 || '%' order by codigo limit 8"
+          : "select codigo, descricao from rf_cnae where busca like '%' || $1 || '%' order by codigo limit 8",
+        [digitos.length >= 3 ? digitos : t],
+      );
+      return r.rows.map((x) => ({ valor: x.descricao as string, detalhe: `CNAE ${x.codigo as number}` }));
+    },
+
     // ───────────── Pesquisas salvas e avisos ─────────────
 
     async pesquisasSalvas(): Promise<PesquisaSalva[]> {

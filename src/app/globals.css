@@ -10,13 +10,26 @@
   --color-marca-700: #0c6a6e;
   --color-marca-900: #0a3a3f;
   --color-tinta: #0b1f2a;
+  --color-marca-800: #0a5559;
   --color-destaque: #f5a524;
   --color-destaque-600: #d98a0c;
+  --color-superficie: #f4f8f9;
+  --shadow-cartao: 0 1px 2px rgb(11 31 42 / 0.04), 0 1px 3px rgb(11 31 42 / 0.06);
+  --shadow-elevado: 0 8px 24px rgb(11 31 42 / 0.10), 0 2px 6px rgb(11 31 42 / 0.06);
+  /* Pontos de quebra: celular até 767px, tablet 768–1279px (menu em trilho), computador 1280px+ (menu completo). */
+  --breakpoint-xl: 80rem;
 }
 
 body {
-  background: #f6f9fa;
+  background: var(--color-superficie);
   color: var(--color-tinta);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+:where(a, button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--color-marca-500);
+  outline-offset: 2px;
 }
 
 @layer components {
@@ -49,7 +62,10 @@ body {
     @apply block text-sm font-medium text-slate-700;
   }
   .cartao {
-    @apply rounded-xl border border-slate-200 bg-white p-5 shadow-sm;
+    @apply rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[var(--shadow-cartao)];
+  }
+  .cartao-destaque {
+    @apply rounded-2xl border border-marca-200 bg-gradient-to-br from-marca-50 to-white p-5 shadow-[var(--shadow-cartao)];
   }
   .selo {
     @apply inline-flex items-center rounded-full bg-marca-50 px-2.5 py-0.5 text-xs font-medium text-marca-700 ring-1 ring-marca-100;
@@ -58,8 +74,31 @@ body {
     @apply inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600;
   }
   .titulo-pagina {
-    @apply text-2xl font-semibold tracking-tight text-tinta;
+    @apply text-2xl font-semibold tracking-tight text-tinta md:text-[1.75rem];
   }
+  .cabecalho-pagina {
+    @apply flex flex-wrap items-end justify-between gap-3;
+  }
+  /* Chips: filtros ativos (com ×), opções de escolha e atalhos de pesquisa. */
+  .chip {
+    @apply inline-flex min-h-8 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm text-slate-700 transition hover:border-marca-500 hover:text-marca-700;
+  }
+  .chip-ativo {
+    @apply inline-flex min-h-8 items-center gap-1.5 rounded-full border border-marca-200 bg-marca-50 px-3 py-1 text-sm font-medium text-marca-800;
+  }
+  .opcao {
+    @apply inline-flex min-h-9 cursor-pointer select-none items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:border-marca-500 has-[:checked]:border-marca-500 has-[:checked]:bg-marca-50 has-[:checked]:font-medium has-[:checked]:text-marca-800;
+  }
+  .opcao input { @apply sr-only; }
+  .kpi {
+    @apply rounded-xl border border-slate-200/80 bg-white p-4 shadow-[var(--shadow-cartao)];
+  }
+  .kpi-valor { @apply text-xl font-semibold tracking-tight text-tinta; }
+  .kpi-rotulo { @apply text-xs font-medium uppercase tracking-wide text-slate-500; }
+  .vazio {
+    @apply flex flex-col items-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-10 text-center text-sm text-slate-600;
+  }
+  .secao-titulo { @apply text-sm font-semibold uppercase tracking-wide text-slate-500; }
   .sub-pagina {
     @apply mt-1 text-sm text-slate-600;
   }

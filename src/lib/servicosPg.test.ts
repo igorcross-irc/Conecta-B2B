@@ -684,3 +684,22 @@ describe("chaves de API", () => {
     await expect(membro.chavesApi()).rejects.toThrow();
   });
 });
+
+describe("sugestões da pesquisa", () => {
+  it("sugere cidades pela lista de municípios (sem acento, por ordem de tamanho) e atividades por texto ou código", async () => {
+    const { db, s } = await novo();
+    await db.query(`insert into rf_cnae (codigo, descricao, busca) values (1091102, 'Fabricação de produtos de padaria e confeitaria', 'fabricacao de produtos de padaria e confeitaria'), (4721102, 'Padaria e confeitaria com predominância de revenda', 'padaria e confeitaria com predominancia de revenda')`);
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, matriz, situacao, cnae, uf, municipio, busca) values
+       ('33000167000101','A',true,'ATIVA',1091102,'RJ','NITERÓI','a'), ('11222333000181','B',true,'ATIVA',1091102,'RJ','NITERÓI','b'),
+       ('00000000000191','C',true,'ATIVA',1091102,'RJ','NILÓPOLIS','c'), ('11111111000191','D',true,'ATIVA',1091102,'SP','NIQUELÂNDIA','d')`,
+    );
+    await db.query("select atualizar_municipios()");
+    expect((await s.sugerir("cidade", "ni", "RJ")).map((x) => x.valor)).toEqual(["NITERÓI", "NILÓPOLIS"]);
+    expect((await s.sugerir("cidade", "Niterói")).map((x) => x.valor)).toEqual(["NITERÓI"]);
+    expect((await s.sugerir("cidade", "ni", "SP")).map((x) => x.valor)).toEqual(["NIQUELÂNDIA"]);
+    expect(await s.sugerir("cidade", "n")).toEqual([]);
+    expect((await s.sugerir("segmento", "padaria")).map((x) => x.detalhe)).toEqual(["CNAE 1091102", "CNAE 4721102"]);
+    expect((await s.sugerir("segmento", "4721")).map((x) => x.detalhe)).toEqual(["CNAE 4721102"]);
+  });
+});

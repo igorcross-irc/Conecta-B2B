@@ -75,6 +75,13 @@ async function main() {
     if (feitos % 20000 < 2000) log(`Gravados ${feitos}/${total}`);
   }
   log(`Concluído: ${feitos} estabelecimentos.`);
+  // Atualiza a lista de municípios usada nas sugestões da pesquisa (precisa da migração 0012).
+  try {
+    const m = await db.query("select atualizar_municipios() as n");
+    log(`Municípios atualizados: ${m.rows[0].n}.`);
+  } catch (e) {
+    log(`Não atualizei os municípios (aplique db/neon/0012_municipios.sql): ${(e as Error).message}`);
+  }
   await db.end();
 }
 
