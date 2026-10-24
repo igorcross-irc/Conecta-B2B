@@ -15,6 +15,29 @@ export function chaveGemini(): string | undefined {
   return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || undefined;
 }
 
+const TRANSITORIOS = new Set([429, 500, 502, 503, 504]);
+const ESPERAS_MS = [600, 1800];
+
+/** Erro de IA com mensagem que pode ir direto para a tela (sem JSON cru do provedor). */
+export function mensagemIA(modelo: string, status: number, corpo: string): string {
+  if (status === 429 || status === 503) return `A IA do Google está sobrecarregada agora (HTTP ${status}). Tente de novo em instantes.`;
+  return `Gemini (${modelo}): HTTP ${status} ${corpo.slice(0, 200)}`;
+}
+
+/** Faz a chamada e repete até 2 vezes, com espera, se o Gemini estiver sobrecarregado (429, 5xx) ou a rede falhar. */
+export async function comTentativas(chamar: () => Promise<Response>, esperas: number[] = ESPERAS_MS): Promise<Response> {
+  for (let i = 0; ; i++) {
+    let r: Response | undefined;
+    try {
+      r = await chamar();
+      if (!TRANSITORIOS.has(r.status) || i >= esperas.length) return r;
+    } catch (e) {
+      if (i >= esperas.length) throw e;
+    }
+    await new Promise((ok) => setTimeout(ok, esperas[i]));
+  }
+}
+
 type ModeloApi = { name: string; supportedGenerationMethods?: string[] };
 
 /** Escolhe um modelo "flash" barato: o de GEMINI_MODEL, senão o flash-lite mais novo, senão o flash mais novo. */
@@ -36,13 +59,15 @@ export async function listarModelos(chave: string, f: typeof fetch = fetch): Pro
 }
 
 export async function gerarTexto(chave: string, modelo: string, prompt: string, f: typeof fetch = fetch): Promise<string> {
-  const r = await f(`${BASE}/models/${modelo}:generateContent`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-goog-api-key": chave },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-    signal: AbortSignal.timeout(30000),
-  });
-  if (!r.ok) throw new Error(`Geração (${modelo}): HTTP ${r.status} ${(await r.text()).slice(0, 300)}`);
+  const r = await comTentativas(() =>
+    f(`${BASE}/models/${modelo}:generateContent`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": chave },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      signal: AbortSignal.timeout(30000),
+    }),
+  );
+  if (!r.ok) throw new Error(mensagemIA(modelo, r.status, await r.text()));
   const j = (await r.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
   return (j.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("").trim();
 }
@@ -65,13 +90,15 @@ export async function testarGemini(prompt: string, f: typeof fetch = fetch): Pro
 
 /** Pede uma resposta em JSON ao Gemini e já a converte. Devolve null se a resposta não for JSON válido. */
 export async function gerarJson<T>(chave: string, modelo: string, prompt: string, f: typeof fetch = fetch): Promise<T | null> {
-  const r = await f(`${BASE}/models/${modelo}:generateContent`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-goog-api-key": chave },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0 } }),
-    signal: AbortSignal.timeout(45000),
-  });
-  if (!r.ok) throw new Error(`Gemini (${modelo}): HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
+  const r = await comTentativas(() =>
+    f(`${BASE}/models/${modelo}:generateContent`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": chave },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0 } }),
+      signal: AbortSignal.timeout(45000),
+    }),
+  );
+  if (!r.ok) throw new Error(mensagemIA(modelo, r.status, await r.text()));
   const j = (await r.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
   const texto = (j.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("").trim();
   try {
