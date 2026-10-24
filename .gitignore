@@ -45,3 +45,6 @@ next-env.d.ts
 .env.local
 !.env.example
 .dados/
+.dados-e2e/
+/test-results/
+/playwright-report/

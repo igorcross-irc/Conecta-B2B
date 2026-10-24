@@ -1,3 +1,4 @@
+import { unstable_rethrow } from "next/navigation";
 import { cache } from "react";
 import { abrirBanco, type Banco } from "@/db/conexao";
 import { BrasilApi, EmpresaEmCascata, minhaReceita } from "./providers/brasilapi";
@@ -182,6 +183,8 @@ export async function confirmarOptOutPublico(token: string) {
 
 /** Converte erros de negócio em resposta JSON com o status certo. */
 export function responderErro(e: unknown): Response {
+  // Sinais internos do Next (página dinâmica, redirecionamento) não são erros: precisam seguir adiante.
+  unstable_rethrow(e);
   if (e instanceof ErroDeNegocio) {
     return Response.json({ erro: e.message }, { status: e.status });
   }

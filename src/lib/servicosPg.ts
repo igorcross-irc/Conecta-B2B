@@ -997,6 +997,8 @@ export function criarServicosPg({
     async enriquecer(cnpj: string): Promise<Enriquecimento> {
       if (!alvoValido(cnpj)) throw new ErroDeNegocio("CNPJ ou site inválido.");
       const e = await servicos.consultarEmpresa(cnpj);
+      // Modo demonstração promete funcionar sem internet: não consulta as fontes externas.
+      if (process.env.CONECTA_MODO_DEMO === "1") return { erros: {}, obtidoEm: new Date().toISOString() };
       return enriquecerEmpresa(db, { cnpj: chaveAlvo(cnpj), razaoSocial: e.razaoSocial, nomeFantasia: e.nomeFantasia, dominio: e.dominio }, { registrar });
     },
 
