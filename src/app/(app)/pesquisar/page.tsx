@@ -2,7 +2,8 @@ import { ROTULO_DIMENSAO, type Dimensao } from "@/lib/aderencia";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
-import { contexto } from "@/lib/app";
+import { consultaPermitida, contexto } from "@/lib/app";
+import { LimiteDeConsultas } from "@/components/LimiteDeConsultas";
 import { emailConfigurado } from "@/lib/email";
 import { limparFiltros, paraParametros, resumoFiltros } from "@/lib/filtrosUrl";
 import { chaveGemini } from "@/lib/ia/gemini";
@@ -37,6 +38,7 @@ const texto = (sp: Record<string, string | string[] | undefined>, k: string) => 
 
 export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar">) {
   await connection();
+  if (!(await consultaPermitida())) return <LimiteDeConsultas />;
   const sp = await searchParams;
   const v: ValoresFiltro = {
     nome: texto(sp, "nome"), termos: texto(sp, "termos"), segmento: texto(sp, "segmento"),
@@ -176,7 +178,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
             <>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-slate-600">
-                  <strong className="text-base text-tinta">{r.total.toLocaleString("pt-BR")}</strong> empresa{r.total === 1 ? "" : "s"}
+                  {r.totalAproximado && "mais de "}<strong className="text-base text-tinta">{r.total.toLocaleString("pt-BR")}</strong> empresa{r.total === 1 && !r.totalAproximado ? "" : "s"}
                   {r.total > 0 && <> · página {pagina + 1} de {paginas}</>}
                 </p>
                 <div className="flex items-center gap-2 text-sm" role="group" aria-label="Ordenar">
@@ -193,7 +195,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
               {r.total > 0 && (
                 <details className="cartao p-0">
                   <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-marca-800 marker:hidden">
-                    <Importar width={18} height={18} /> Exportar estas {r.total.toLocaleString("pt-BR")} empresas para planilha ou CRM
+                    <Importar width={18} height={18} /> Exportar {r.totalAproximado ? "as primeiras " : "estas "}{r.total.toLocaleString("pt-BR")} empresas para planilha ou CRM
                   </summary>
                   <div className="space-y-2 border-t border-slate-100 p-4 text-sm">
                     <div className="flex flex-wrap gap-2">

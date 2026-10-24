@@ -92,7 +92,7 @@ export interface EmpresaTrabalhada {
   ultimaBusca?: "em_andamento" | "concluida" | "erro";
   ultimaAtividade: string;
 }
-export interface ResultadoPesquisa { itens: ItemPesquisa[]; total: number; baseReceita: boolean; sites: string[]; temPerfil?: boolean }
+export interface ResultadoPesquisa { itens: ItemPesquisa[]; total: number; /** Verdadeiro quando há mais empresas que `total` (a contagem para em 10.000). */ totalAproximado?: boolean; baseReceita: boolean; sites: string[]; temPerfil?: boolean }
 
 export interface EstadoBusca {
   id: string;

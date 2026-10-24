@@ -41,6 +41,7 @@ export async function GET(req: Request) {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="empresas-${formato}.csv"`,
         "X-Total-Empresas": String(r.total),
+        "X-Total-Aproximado": r.totalAproximado ? "1" : "0",
       },
     });
   } catch (e) {

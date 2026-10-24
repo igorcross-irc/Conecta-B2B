@@ -188,3 +188,13 @@ Críticas encontradas e o que foi feito:
 - **`/parecidas?cnpj=`**: dado o CNPJ de uma empresa da base da Receita, lista as mais parecidas do mesmo setor e estado, com nota de 0 a 100 (atividade igual 45 ou do mesmo grupo 25, porte 20, mesma cidade 20 ou mesmo estado 10, idade até 3 anos de diferença 15) e o que têm em comum. Atalhos nos cartões da Pesquisa e na ficha de Descobrir. Só funciona para empresas que estão na base carregada. Sem custo em créditos.
 - **Pesquisa de concorrentes (24/10):** o que ainda falta frente a Apollo/ZoomInfo/Lusha/Cognism/Econodata: tecnologias do site, sinais de compra (filial, mudança de sócio/endereço), cadência de e-mails, extensão de navegador, CRM por API, comitê de compra, verificação paga de e-mail e telefone, identificação de visitantes do site.
 - **Próximos da lista:** gatilhos de abordagem nos alertas, comitê de compra na ficha, tecnologias detectadas no site.
+
+
+## 24/10/2026 (noite, parte 6) — desempenho e segurança (PR #7)
+
+- **Pesquisa por nome ~100x mais rápida.** Antes: ~3 s varrendo as 2,2 mi linhas do RJ. Agora: ~26 ms, com índice de busca por palavras (`rf_est_busca_fts`, migração 0015, **aplicada no Neon**; 91 MB, 20 s para criar). Cada palavra digitada vale como início de palavra do nome ("padar" acha "Padaria"; trecho do meio não). Escolhido no lugar do trigrama (>400 MB, estouraria o plano grátis).
+- **Contagem limitada a 10.000** ("mais de 10.000 empresas"): contar tudo varria a base inteira em buscas amplas.
+- **Cota de 600 consultas por hora por usuário** em Pesquisa, Mercado e Parecidas.
+- **Cabeçalhos de segurança** (CSP enxuta com frame-ancestors, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy, HSTS). `zod` fixado em 4.6.7: `npm audit` zerado.
+- **RLS verificada contra o Neon real** (detalhes em `docs/papel-de-banco.md`); `statement_timeout` de 20 s no papel. Falta só você ligar o papel em produção.
+- Medidas para o plano nacional: matrizes ativas do Brasil = 27,05 mi, das quais 16,66 mi (61,6%) são Empresário Individual (inclui MEI).

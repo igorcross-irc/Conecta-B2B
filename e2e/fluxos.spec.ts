@@ -275,3 +275,28 @@ test.describe("unificado no celular @celular", () => {
     await expect(page).toHaveURL(/\/empresas/);
   });
 });
+
+test.describe("segurança e desempenho", () => {
+  test("respostas trazem os cabeçalhos de segurança, nas telas e na API", async ({ request }) => {
+    for (const caminho of ["/pesquisar", "/empresas", "/api/saude"]) {
+      const r = await request.get(caminho);
+      const h = r.headers();
+      expect(h["x-frame-options"], caminho).toBe("DENY");
+      expect(h["x-content-type-options"], caminho).toBe("nosniff");
+      expect(h["content-security-policy"], caminho).toContain("frame-ancestors 'none'");
+      expect(h["referrer-policy"], caminho).toBe("strict-origin-when-cross-origin");
+      expect(h["strict-transport-security"], caminho).toContain("max-age=");
+      expect(h["permissions-policy"], caminho).toContain("camera=()");
+    }
+  });
+
+  test("a pesquisa por palavras aceita início de palavra e ignora símbolos estranhos sem erro", async ({ page }) => {
+    await page.goto("/pesquisar?nome=padar&uf=RJ");
+    await expect(page.getByRole("link", { name: "Padaria Estrela" }).first()).toBeVisible();
+    for (const t of ["estrela:*", "a & b | !c", "'; drop table contato; --"]) {
+      const r = await page.goto(`/pesquisar?uf=RJ&nome=${encodeURIComponent(t)}`);
+      expect(r!.status(), t).toBeLessThan(500);
+      await expect(page.getByRole("heading", { name: "Pesquisar empresas" })).toBeVisible();
+    }
+  });
+});

@@ -27,8 +27,10 @@ function construirFiltro(f: PesquisaFiltros) {
     const p: unknown[] = [];
     const add = (v: unknown) => (p.push(v), `$${p.length}`);
     if (!todasMatrizes) where.push("e.matriz");
-    if (nome) where.push(`e.busca like '%' || ${add(nome)} || '%'`);
-    for (const t of termos) where.push(`e.busca like '%' || ${add(t)} || '%'`);
+    // Nome e palavras-chave: cada palavra digitada vale como início de palavra do nome (ex.: "padar" acha "Padaria"), usando o índice.
+    // Os termos já saem de normalizarBusca (só letras e números), então não há caracteres especiais de tsquery.
+    const palavras = [...nome.split(" "), ...termos].filter(Boolean);
+    if (palavras.length) where.push(`to_tsvector('simple', e.busca) @@ to_tsquery('simple', ${add(palavras.map((t) => `${t}:*`).join(" & "))})`);
     if (uf) where.push(`e.uf = ${add(uf)}`);
     if (cidade) where.push(`lower(translate(e.municipio, 'ÁÀÂÃÉÊÍÓÔÕÚÇáàâãéêíóôõúç', 'AAAAEEIOOOUCaaaaeeiooouc')) like '%' || ${add(cidade)} || '%'`);
     if (bairro) where.push(`lower(translate(e.bairro, 'ÁÀÂÃÉÊÍÓÔÕÚÇáàâãéêíóôõúç', 'AAAAEEIOOOUCaaaaeeiooouc')) like '%' || ${add(bairro)} || '%'`);
@@ -55,6 +57,9 @@ function construirFiltro(f: PesquisaFiltros) {
     return { w: where.join(" and "), p, add, nome, termos };
 }
 
+/** Acima disto a pesquisa informa "mais de N" em vez de contar tudo (e só deixa navegar até aqui). */
+export const LIMITE_CONTAGEM = 10_000;
+
 /** Serviços do grupo "pesquisa". */
 export function criarPesquisa(c: Ctx) {
   const { db, org, ator, auditar, um, temBaseReceita, servicos } = c;
@@ -70,13 +75,15 @@ export function criarPesquisa(c: Ctx) {
       const filtro = construirFiltro(f);
       if (!filtro) return { itens: [], total: 0, baseReceita: await temBaseReceita(), sites: [] };
       const { w, p, add, nome, termos } = filtro;
+      const nFiltro = p.length; // parâmetros do WHERE; os que vierem depois (aderência, página) não entram na contagem
       // Aderência ao perfil de cliente ideal: a nota sai do SQL (para ordenar a pesquisa inteira) e os motivos, do TypeScript.
       const perfil = f.aderencia || f.ordem === "aderencia" ? await servicos.perfilIdeal() : undefined;
       const exprAderencia = perfil ? sqlAderencia(perfil, add) : null;
       const ordem = f.ordem === "aderencia" && exprAderencia ? "aderencia desc, e.razao_social" : f.ordem === "recentes" ? "e.aberta_em desc nulls last, e.razao_social" : "e.razao_social";
-      // Uma só varredura: a contagem vem junto da página (count(*) over ()), em vez de duas consultas.
-      const r = await db.query(
-        `select count(*) over ()::int as total_geral, e.cnpj, e.razao_social, e.nome_fantasia, e.municipio, e.uf, e.bairro, e.cnae, c.descricao as atividade,
+      // A página e a contagem rodam juntas. A contagem para em LIMITE_CONTAGEM + 1: contar tudo varre a base inteira em buscas amplas.
+      const [r, contagem] = await Promise.all([
+        db.query(
+        `select e.cnpj, e.razao_social, e.nome_fantasia, e.municipio, e.uf, e.bairro, e.cnae, c.descricao as atividade,
                 e.porte, e.aberta_em, e.matriz, (e.email is not null) as tem_email, (e.telefone is not null) as tem_telefone,
                 e.cnae as cnae_cod, ${exprAderencia ? `${exprAderencia} as aderencia,` : ""}
                 ${f.completo ? "e.email as email_cad, e.telefone as telefone_cad," : ""}
@@ -84,12 +91,11 @@ export function criarPesquisa(c: Ctx) {
            from rf_estabelecimento e left join rf_cnae c on c.codigo = e.cnae
           where ${w} order by ${ordem} limit ${porPagina} offset ${add(pagina * porPagina)}`,
         p,
-      );
-      let totalGeral = r.rows.length ? Number(r.rows[0].total_geral) : 0;
-      // Página além do fim: a contagem não veio junto, então conta à parte.
-      if (!r.rows.length && pagina > 0) {
-        totalGeral = (await um<{ n: number }>(`select count(*)::int as n from rf_estabelecimento e where ${w}`, p.slice(0, -1)))?.n ?? 0;
-      }
+        ),
+        um<{ n: number }>(`select count(*)::int as n from (select 1 from rf_estabelecimento e where ${w} limit ${LIMITE_CONTAGEM + 1}) t`, p.slice(0, nFiltro)),
+      ]);
+      const contados = contagem?.n ?? 0;
+      const totalGeral = Math.min(contados, LIMITE_CONTAGEM);
       // Sites já conhecidos cujo endereço combina com o termo (não dependem da base da Receita)
       const termoSite = [nome, ...termos].filter(Boolean).join("").replace(/ /g, "");
       const sites = termoSite.length >= 3
@@ -103,6 +109,7 @@ export function criarPesquisa(c: Ctx) {
         : [];
       return {
         total: totalGeral,
+        ...(contados > LIMITE_CONTAGEM ? { totalAproximado: true } : {}),
         temPerfil: Boolean(perfil && exprAderencia),
         baseReceita: await temBaseReceita(),
         sites,

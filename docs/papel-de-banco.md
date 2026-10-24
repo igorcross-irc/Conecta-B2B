@@ -30,3 +30,16 @@ o próprio banco recusa ler ou escrever dados de outra organização.
 - Dados compartilhados por desenho (cache de empresas, pool de buscas, base comum, base da Receita) e tabelas internas
   (`opt_out`, `limite_pedido`, `optout_pedido`, `operadora`): acesso livre, porque não têm dono.
 - O opt-out, que apaga dados de todas as organizações, roda pela função `aplicar_opt_out`, e não por acesso irrestrito.
+
+
+## Verificação contra o Neon real (24/10/2026)
+
+Feita com `set local role conecta_app` dentro de uma transação, só com leituras (o papel não tem login ainda):
+
+- O papel **não** tem `BYPASSRLS`. Um membro da organização vê as próprias 29 pessoas, 6 buscas, 1 organização e 1 membro. Um usuário estranho (id inexistente) vê **zero** em `contato`, `busca_job`, `organizacao` e `membro`, e continua lendo a base pública da Receita (2,2 mi linhas).
+- As 16 funções `security definer` (revelar, cobrar, convites, opt-out...) têm `execute` para o papel.
+- `alter role conecta_app set statement_timeout = '20s'` e `grant conecta_app to current_user` aplicados (`db/neon/0016`).
+
+**Ponto de atenção (defesa em camadas):** a política `app_contato_dado` deixa o papel do app ler `contato_dado` (e-mail e telefone completos) da própria organização. Quem impede de mostrar sem "revelar" (e sem cobrar) é o código do servidor (`visivel`), não o banco. Hoje não há caminho de usuário até esse SQL, mas um erro de código ou injeção de SQL ignoraria a cobrança. Melhoria futura: guardar o e-mail/telefone mascarado em `contato` e limitar a política de leitura às linhas já reveladas.
+
+**Falta para ligar o papel em produção** (só você pode): trocar a senha do Neon que vazou, definir login e senha do papel (`alter role conecta_app login password '...'`) e pôr a nova `DATABASE_URL` na Vercel, como no passo a passo acima.

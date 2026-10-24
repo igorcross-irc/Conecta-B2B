@@ -18,7 +18,7 @@ export async function abrirBancoLocal(
 ): Promise<PGlite> {
   const db = new PGlite(dir);
   await db.waitReady;
-  const ARQUIVOS = ["0001_init.sql", "0002_onboarding.sql", "0003_pool_e_buscas.sql", "0004_plataforma.sql", "0005_alvo_e_receita.sql", "0007_limite_e_optout.sql", "0008_papel_app.sql", "0009_pesquisas_salvas.sql", "0010_api_chaves.sql", "0011_enriquecimento.sql", "0012_municipios.sql", "0013_monitoramento.sql", "0014_perfil_ideal.sql"];
+  const ARQUIVOS = ["0001_init.sql", "0002_onboarding.sql", "0003_pool_e_buscas.sql", "0004_plataforma.sql", "0005_alvo_e_receita.sql", "0007_limite_e_optout.sql", "0008_papel_app.sql", "0009_pesquisas_salvas.sql", "0010_api_chaves.sql", "0011_enriquecimento.sql", "0012_municipios.sql", "0013_monitoramento.sql", "0014_perfil_ideal.sql", "0015_busca_palavras.sql"];
   const ja = await db.query<{ existe: boolean }>(
     "select to_regclass('public.organizacao') is not null as existe",
   );
