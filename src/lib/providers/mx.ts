@@ -48,9 +48,12 @@ const memo = new Map<string, { ate: number; r: Awaited<ReturnType<ResolvedorMx>>
 
 export async function verificarDominiosDeEmail(
   contatos: Contato[],
-  resolver: ResolvedorMx = resolverMx,
+  resolverEscolhido?: ResolvedorMx,
   agora: () => number = Date.now,
 ): Promise<Contato[]> {
+  // Com o resolvedor padrão, fica desligada nos testes e no modo demonstração (os domínios dali são fictícios e seriam todos descartados).
+  if (!resolverEscolhido && (process.env.CONECTA_SEM_MX === "1" || process.env.CONECTA_MODO_DEMO === "1")) return contatos;
+  const resolver = resolverEscolhido ?? resolverMx;
   const dominios = [...new Set(contatos.flatMap((c) => (c.email ? [c.email.split("@")[1]?.toLowerCase()] : [])).filter((d): d is string => Boolean(d)))];
   const resultado = new Map<string, Awaited<ReturnType<ResolvedorMx>>>();
   await Promise.all(

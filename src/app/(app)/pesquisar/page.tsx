@@ -24,6 +24,9 @@ const EXEMPLOS: { rotulo: string; q: string }[] = [
   { rotulo: "Tecnologia com e-mail cadastral", q: "setor=ti&email=1" },
 ];
 
+/** Anos completos desde uma data (AAAA-MM-DD). */
+const anosDesde = (d?: string) => (d ? Math.max(0, Math.floor((Date.now() - Date.parse(d)) / 31_557_600_000)) : undefined);
+
 const lista = (sp: Record<string, string | string[] | undefined>, k: string) =>
   Array.isArray(sp[k]) ? (sp[k] as string[]) : typeof sp[k] === "string" ? [sp[k] as string] : [];
 const texto = (sp: Record<string, string | string[] | undefined>, k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
@@ -170,7 +173,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
               ) : (
                 <ul className="space-y-3">
                   {r.itens.map((i) => {
-                    const anos = i.abertaEm ? Math.max(0, Math.floor((Date.now() - Date.parse(i.abertaEm)) / 31_557_600_000)) : undefined;
+                    const anos = anosDesde(i.abertaEm);
                     const nome = i.nomeFantasia || i.razaoSocial;
                     return (
                       <li key={i.cnpj} className="cartao flex flex-col gap-3 transition hover:border-marca-200 hover:shadow-md sm:flex-row sm:items-center">

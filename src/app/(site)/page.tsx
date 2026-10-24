@@ -6,11 +6,17 @@ const PASSOS = [
   ["3", "Revele e exporte", "Pague crédito só para revelar e-mail ou telefone. Monte listas e exporte em CSV."],
 ];
 
+/** Fontes de dados ligadas hoje, mostradas na página para a origem do dado ficar clara. */
+const FONTES = ["Receita Federal", "CVM", "Wikidata", "Google Notícias", "Portal da Transparência", "Sites das empresas"];
+
 const RECURSOS = [
   ["Base que cresce com o uso", "Cada empresa pesquisada fica guardada e pode ser reaproveitada por todos. A segunda busca é mais rápida e mais completa que a primeira."],
   ["Colaborativa de verdade", "Corrija o site de uma empresa, deixe notas e tags, adicione contatos. O que você melhora vale para todos."],
   ["Cobrança justa", "Busca sem resultado e dado inexistente não gastam crédito. Revelar e-mail e telefone é opcional."],
   ["Equipes e permissões", "Organizações separadas, convites por link, administradores e membros, saldo compartilhado e auditoria."],
+  ["Pesquisa por filtros e por pergunta", "Atividade, cidade, setor, porte e idade da empresa, com sugestões ao digitar. Ou descreva em português o que procura e a IA preenche os filtros."],
+  ["Mais do que o cadastro", "CVM (diretor de relações com investidores), Wikidata (funcionários e receita), notícias dos últimos 30 dias e sanções federais, cada fonte com a origem à mostra."],
+  ["Avisos e integrações", "Salve uma pesquisa e receba por e-mail as empresas novas. Exporte para HubSpot, RD Station e Pipedrive ou use a API."],
   ["Fontes abertas primeiro", "Receita Federal via APIs públicas e sites institucionais. Fontes pagas podem ser plugadas depois sem refazer nada."],
   ["LGPD no centro", "Opt-out público que apaga dados em todas as bases, só contatos profissionais e transparência sobre a origem."],
 ];
@@ -18,10 +24,10 @@ const RECURSOS = [
 export default function Landing() {
   return (
     <div className="space-y-20">
-      <section className="grid items-center gap-10 pt-6 md:grid-cols-2">
+      <section className="grid items-center gap-10 pt-2 md:pt-6 lg:grid-cols-2">
         <div className="space-y-6">
           <p className="selo">Prospecção B2B para o Brasil</p>
-          <h1 className="text-4xl font-bold leading-tight tracking-tight text-tinta md:text-5xl">
+          <h1 className="text-3xl font-bold leading-tight tracking-tight text-tinta sm:text-4xl xl:text-5xl">
             Descubra quem decide dentro de qualquer empresa, <span className="text-marca-700">a partir do CNPJ</span>.
           </h1>
           <p className="text-lg text-slate-600">
@@ -56,6 +62,11 @@ export default function Landing() {
         </div>
       </section>
 
+      <section className="flex flex-wrap items-center justify-center gap-2 text-sm text-slate-600" aria-label="Fontes de dados">
+        <span className="font-medium">Dados de:</span>
+        {FONTES.map((f) => <span key={f} className="chip cursor-default hover:border-slate-200 hover:text-slate-700">{f}</span>)}
+      </section>
+
       <section className="space-y-6">
         <h2 className="text-2xl font-bold tracking-tight">Como funciona</h2>
         <ol className="grid gap-4 md:grid-cols-3">
@@ -71,7 +82,7 @@ export default function Landing() {
 
       <section className="space-y-6">
         <h2 className="text-2xl font-bold tracking-tight">Feito para times de vendas e prospecção</h2>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {RECURSOS.map(([t, d]) => (
             <div key={t} className="cartao">
               <h3 className="font-semibold text-marca-700">{t}</h3>

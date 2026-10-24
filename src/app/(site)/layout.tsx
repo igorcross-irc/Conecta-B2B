@@ -6,11 +6,11 @@ export default function SiteLayout({ children }: LayoutProps<"/">) {
     <div className="flex min-h-screen flex-col">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <Link href="/" aria-label="Conecta-B2B, página inicial"><Logo /></Link>
-          <nav className="flex items-center gap-4 text-sm">
-            <Link href="/privacidade" className="text-slate-600 hover:text-tinta">Privacidade</Link>
+          <Link href="/" aria-label="Conecta-B2B, página inicial" className="shrink-0 whitespace-nowrap"><Logo /></Link>
+          <nav className="flex items-center gap-3 whitespace-nowrap text-sm sm:gap-4">
+            <Link href="/privacidade" className="hidden text-slate-600 hover:text-tinta sm:inline">Privacidade</Link>
             <Link href="/entrar" className="text-slate-600 hover:text-tinta">Entrar</Link>
-            <Link href="/entrar?novo=1" className="btn-primario">Criar conta grátis</Link>
+            <Link href="/entrar?novo=1" className="btn-primario"><span className="sm:hidden">Criar conta</span><span className="hidden sm:inline">Criar conta grátis</span></Link>
           </nav>
         </div>
       </header>

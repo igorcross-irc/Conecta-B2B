@@ -57,7 +57,7 @@ export function indexarCvm(texto: string): Indice {
       responsavel: nomeResp
         ? {
             nome: nomeResp,
-            cargo: limpar(l[c.TP_RESP]) || "Responsável cadastrado na CVM",
+            cargo: titulo(limpar(l[c.TP_RESP])) || "Responsável cadastrado na CVM",
             emails: emailsResp.length ? emailsResp : emailsEmpresa,
             telefone: telefone(limpar(l[c.DDD_TEL_RESP]), limpar(l[c.TEL_RESP])) ?? telefone(limpar(l[c.DDD_TEL]), limpar(l[c.TEL])),
           }
@@ -96,7 +96,7 @@ export function contatoDeRi(info: InfoCvm, agora = new Date().toISOString()): Co
   return [
     {
       nome: r.nome,
-      cargo: titulo(r.cargo),
+      cargo: r.cargo,
       senioridade: "Diretoria",
       departamento: "Relações com investidores",
       email: r.emails[0],

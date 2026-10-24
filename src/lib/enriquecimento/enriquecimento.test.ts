@@ -18,7 +18,7 @@ describe("CVM (cadastro real)", () => {
     const p = indice.get(PETROBRAS)!;
     expect(p).toMatchObject({ nome: "PETROBRAS", situacao: "ATIVO", setor: "Petróleo e Gás", controleAcionario: "ESTATAL HOLDING" });
     expect(p.mercado).toBe("BOLSA");
-    expect(p.responsavel?.cargo).toBe("DIRETOR DE RELAÇÕES COM INVESTIDORES");
+    expect(p.responsavel?.cargo).toBe("Diretor de Relações com Investidores");
     expect(p.emails).toEqual(["petroinvest@petrobras.com.br", "acionistas@petrobras.com.br"]);
     expect(p.telefone).toBe("(21) 32241510");
   });
