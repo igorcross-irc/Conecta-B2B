@@ -80,3 +80,15 @@ export async function gerarJson<T>(chave: string, modelo: string, prompt: string
     return null;
   }
 }
+
+const memoModelo = globalThis as unknown as { __modeloGemini?: { chave: string; modelo: string; ate: number } };
+
+/** Modelo a usar nas chamadas do app: o de GEMINI_MODEL ou o flash-lite mais novo (lista guardada por 1 hora). */
+export async function modeloPadrao(chave: string, f: typeof fetch = fetch): Promise<string> {
+  const m = memoModelo.__modeloGemini;
+  if (m && m.chave === chave && m.ate > Date.now()) return m.modelo;
+  const modelo = escolherModelo(await listarModelos(chave, f), process.env.GEMINI_MODEL);
+  if (!modelo) throw new Error("Nenhum modelo do Gemini disponível para esta chave.");
+  memoModelo.__modeloGemini = { chave, modelo, ate: Date.now() + 3_600_000 };
+  return modelo;
+}

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { contexto } from "@/lib/app";
+import { chaveGemini } from "@/lib/ia/gemini";
+import { BuscaNatural } from "./BuscaNatural";
 import { ABERTURAS, PORTES, SETORES } from "@/lib/setores";
 
 export const metadata = { title: "Pesquisar" };
@@ -44,6 +46,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
         <h1 className="titulo-pagina">Pesquisar empresas</h1>
         <p className="sub-pagina">Procure por nome (ex.: Atacadão), localização e segmento. O resultado lista CNPJs e sites que combinam.</p>
       </header>
+      {chaveGemini() && <BuscaNatural />}
       <form className="cartao grid gap-3 md:grid-cols-3" method="get">
         <label className="text-sm">Nome ou termo<input name="nome" defaultValue={v.nome} placeholder="Atacadão" className="campo mt-1 w-full" /></label>
         <label className="text-sm">Outros termos<input name="termos" defaultValue={v.termos} placeholder="supermercado atacado" className="campo mt-1 w-full" /></label>

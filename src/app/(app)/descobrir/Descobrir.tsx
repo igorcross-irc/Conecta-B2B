@@ -1,5 +1,6 @@
 "use client";
 
+import { Abordagem } from "./Abordagem";
 import { useEffect, useState } from "react";
 import { DEPARTAMENTOS, SENIORIDADES, classificarCargo, pesoDoCargo } from "@/lib/cargos";
 
@@ -100,7 +101,7 @@ interface Candidato {
   situacao?: string;
 }
 
-export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }) {
+export default function Descobrir({ cnpjInicial = "", iaAtiva = false }: { cnpjInicial?: string; iaAtiva?: boolean }) {
   const [cnpj, setCnpj] = useState(cnpjInicial);
   const [candidatos, setCandidatos] = useState<Candidato[] | null>(null);
   const [siteBuscado, setSiteBuscado] = useState("");
@@ -514,6 +515,7 @@ export default function Descobrir({ cnpjInicial = "" }: { cnpjInicial?: string }
                       LinkedIn
                     </a>
                   )}
+                  {iaAtiva && <Abordagem contatoId={c.id} />}
                 </div>
               </li>
             ))}

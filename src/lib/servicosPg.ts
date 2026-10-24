@@ -971,6 +971,22 @@ export function criarServicosPg({
       await auditar("base.empresa", d, { dominio, nota, tags });
     },
 
+    /** Dados que a mensagem de abordagem usa: nome e cargo da pessoa e fatos públicos da empresa (nada de e-mail ou telefone). */
+    async dadosParaAbordagem(contatoId: string) {
+      if (!UUID.test(contatoId)) throw new ErroDeNegocio("Contato não encontrado.", 404);
+      const [c] = await guardados([contatoId]);
+      if (!c) throw new ErroDeNegocio("Contato não encontrado.", 404);
+      const e = await servicos.consultarEmpresa(c.cnpj);
+      const idadeAnos = e.abertaEm ? Math.max(0, Math.floor((Date.now() - Date.parse(e.abertaEm)) / 31_557_600_000)) : undefined;
+      return {
+        contato: { nome: c.contato.nome, cargo: c.contato.cargo },
+        empresa: {
+          razaoSocial: e.razaoSocial, nomeFantasia: e.nomeFantasia, segmento: e.cnaePrincipal?.descricao,
+          municipio: e.municipio, uf: e.uf, idadeAnos,
+        },
+      };
+    },
+
     /** Contribui com um contato para a base comum (visível a todos como resultado de busca, mediante crédito). */
     async contribuirContato(p: {
       cnpj: string; nome: string; cargo: string; email?: string; telefone?: string; linkedinUrl?: string;

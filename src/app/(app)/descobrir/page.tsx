@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 import { contexto } from "@/lib/app";
 import Link from "next/link";
+import { chaveGemini } from "@/lib/ia/gemini";
 import Descobrir from "./Descobrir";
 
 export const metadata = { title: "Descobrir" };
@@ -13,7 +14,7 @@ export default async function Pagina({ searchParams }: PageProps<"/descobrir">) 
   const recentes = await servicos.buscasRecentes(8);
   return (
     <div className="space-y-6">
-      <Descobrir cnpjInicial={alvo} />
+      <Descobrir cnpjInicial={alvo} iaAtiva={Boolean(chaveGemini())} />
       {recentes.length > 0 && (
         <section className="cartao">
           <h2 className="mb-2 font-medium">Buscas recentes da equipe</h2>
