@@ -12,7 +12,9 @@ import { EmpresaDemo, ProvedorDemo } from "./providers/mock";
 import { obterSessao } from "./sessao";
 import { criarServicosPg, type ServicosPg } from "./servicosPg";
 import { ErroDeNegocio } from "./servicos";
-import { emailConfigurado, enviarEmail, urlPublica } from "./email";
+import { emailConfigurado, enviarEmail as enviarEmailBruto, urlPublica } from "./email";
+import { log, mensagemDe } from "./log";
+import { medir, monitorarContatos, monitorarEmpresa, type Execucao } from "./monitor";
 
 /**
  * Banco e provedores são únicos no processo; os serviços são criados a cada requisição,
@@ -21,7 +23,34 @@ import { emailConfigurado, enviarEmail, urlPublica } from "./email";
  */
 const g = globalThis as unknown as { __conectaBanco?: Promise<Banco> };
 
+/** Envio de e-mail com monitoramento (sucesso, falha e tempo). */
+const enviarEmail: typeof enviarEmailBruto = (m, http) => medir("Resend (e-mail)", "email", () => enviarEmailBruto(m, http), registrarExecucao, () => 1);
+
 const banco$ = () => (g.__conectaBanco ??= abrirBanco());
+
+/** Grava cada chamada a uma fonte (sucesso, falha e tempo) para o painel Plataforma > Provedores. Nunca derruba a chamada. */
+async function registrarExecucao(e: Execucao): Promise<void> {
+  const banco = await banco$();
+  await banco.comUsuario(ZERO).query(
+    "insert into provedor_execucao (provedor, tipo, ok, ms, itens, erro) values ($1,$2,$3,$4,$5,$6)",
+    [e.provedor, e.tipo, e.ok, e.ms, e.itens ?? null, e.erro ?? null],
+  );
+  if (Math.random() < 0.01) await banco.comUsuario(ZERO).query("select limpar_monitoramento()");
+}
+
+/** Registra uma fonte avulsa (IA, e-mail) no monitoramento. */
+export const registrarFonte = registrarExecucao;
+
+/** Guarda um erro inesperado para o painel Plataforma > Saúde (e no log). Nunca lança. */
+export async function registrarErroApp(origem: string, e: unknown, detalhe?: string): Promise<void> {
+  log.error("erro_app", { origem, erro: mensagemDe(e), detalhe });
+  try {
+    const banco = await banco$();
+    await banco.comUsuario(ZERO).query("insert into erro_app (origem, mensagem, detalhe) values ($1,$2,$3)", [origem, mensagemDe(e), detalhe ? detalhe.slice(0, 500) : null]);
+  } catch {
+    /* sem banco: o log acima já tem o erro */
+  }
+}
 
 /**
  * Fontes gratuitas por padrão: BrasilAPI e CNPJá para a empresa; sócios da Receita e páginas públicas
@@ -35,16 +64,22 @@ function provedores() {
     return { empresa: new EmpresaDemo(), contatos: [new ProvedorDemo()] };
   }
   const site = new SiteEmpresa();
+  const mon = <P extends Parameters<typeof monitorarContatos>[0]>(p: P) => monitorarContatos(p, registrarExecucao);
   return {
-    empresa: new EmpresaEmCascata([new BrasilApi(), minhaReceita(), new CnpjaAberta()]),
+    registrar: registrarExecucao,
+    empresa: new EmpresaEmCascata([
+      monitorarEmpresa(new BrasilApi(), registrarExecucao),
+      monitorarEmpresa(minhaReceita(), registrarExecucao),
+      monitorarEmpresa(new CnpjaAberta(), registrarExecucao),
+    ]),
     contatos: [
-      new SociosReceita(),
-      new CvmRelacoesInvestidores(),
-      site,
+      mon(new SociosReceita()),
+      mon(new CvmRelacoesInvestidores()),
+      mon(site),
       // Fontes extras entram quando a chave existe no ambiente (Vercel → Settings → Environment Variables).
-      ...(process.env.HUNTER_API_KEY ? [new Hunter(process.env.HUNTER_API_KEY)] : []),
+      ...(process.env.HUNTER_API_KEY ? [mon(new Hunter(process.env.HUNTER_API_KEY))] : []),
       ...(process.env.TAVILY_API_KEY && chaveGemini()
-        ? [new BuscaWebPessoas(process.env.TAVILY_API_KEY, chaveGemini()!, process.env.GEMINI_MODEL)]
+        ? [mon(new BuscaWebPessoas(process.env.TAVILY_API_KEY, chaveGemini()!, process.env.GEMINI_MODEL))]
         : []),
     ],
     descobridor: (dominio: string) => site.descobrirCnpjs(dominio),
@@ -150,6 +185,7 @@ export function responderErro(e: unknown): Response {
   if (e instanceof ErroDeNegocio) {
     return Response.json({ erro: e.message }, { status: e.status });
   }
+  void registrarErroApp("rota", e);
   const mensagem = e instanceof Error ? e.message : "Erro inesperado.";
   return Response.json({ erro: mensagem }, { status: 502 });
 }

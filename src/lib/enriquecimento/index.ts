@@ -1,4 +1,5 @@
 import type { Db } from "@/db/conexao";
+import { medir, type Registrador } from "../monitor";
 import { buscarCvm } from "./cvm";
 import { buscarNoticias } from "./noticias";
 import { buscarSancoes, sancoesConfiguradas } from "./sancoes";
@@ -10,6 +11,8 @@ export * from "./tipos";
 /** Quanto tempo cada fonte fica em cache (segundos). Notícias envelhecem rápido; cadastro de companhia quase não muda. */
 export const VALIDADE_S: Record<FonteEnriquecimento, number> = { cvm: 7 * 86400, wikidata: 30 * 86400, noticias: 6 * 3600, sancoes: 86400 };
 
+const NOME_FONTE: Record<FonteEnriquecimento, string> = { cvm: "CVM", wikidata: "Wikidata", noticias: "Google Notícias", sancoes: "Portal da Transparência (CEIS/CNEP)" };
+
 interface Alvo {
   cnpj: string;
   razaoSocial: string;
@@ -18,6 +21,8 @@ interface Alvo {
 }
 
 export interface DepsEnriquecimento {
+  /** Grava a execução de cada fonte (monitoramento). */
+  registrar?: Registrador;
   http?: typeof fetch;
   agora?: () => Date;
 }
@@ -26,7 +31,7 @@ export interface DepsEnriquecimento {
  * Consulta as fontes em paralelo, cada uma com o próprio cache (tabela enriquecimento_cache) e a própria falha:
  * uma fonte fora do ar vira uma mensagem em `erros`, nunca derruba a ficha.
  */
-export async function enriquecer(db: Db, alvo: Alvo, { http, agora = () => new Date() }: DepsEnriquecimento = {}): Promise<Enriquecimento> {
+export async function enriquecer(db: Db, alvo: Alvo, { http, registrar, agora = () => new Date() }: DepsEnriquecimento = {}): Promise<Enriquecimento> {
   const erros: Record<string, string> = {};
 
   async function comCache<T>(fonte: FonteEnriquecimento, buscar: () => Promise<T>): Promise<T | undefined> {
@@ -36,7 +41,8 @@ export async function enriquecer(db: Db, alvo: Alvo, { http, agora = () => new D
         [alvo.cnpj, fonte, VALIDADE_S[fonte]],
       );
       if (c.rows[0]) return c.rows[0].dados.v;
-      const v = await buscar();
+      // Só as chamadas de verdade (não os acertos de cache) entram no monitoramento.
+      const v = registrar ? await medir(`Informação extra: ${NOME_FONTE[fonte]}`, "enriquecimento", buscar, registrar, (r) => (Array.isArray(r) ? r.length : r ? 1 : 0)) : await buscar();
       await db.query(
         `insert into enriquecimento_cache (cnpj, fonte, dados, obtido_em) values ($1, $2, $3::jsonb, now())
          on conflict (cnpj, fonte) do update set dados = excluded.dados, obtido_em = excluded.obtido_em`,

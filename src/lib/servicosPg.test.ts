@@ -717,3 +717,35 @@ describe("cobertura da base", () => {
     expect(await s.cobertura()).toEqual([{ uf: "MG", empresas: 1 }, { uf: "RJ", empresas: 2 }]);
   });
 });
+
+describe("monitoramento das fontes", () => {
+  it("resume por fonte, calcula taxa e tempos, lista falhas e só a operadora vê", async () => {
+    const { db, s } = await novo();
+    await db.query(
+      `insert into provedor_execucao (provedor, tipo, ok, ms, itens, erro, criado_em) values
+       ('BrasilAPI','empresa',true,100,1,null,now()), ('BrasilAPI','empresa',true,300,1,null,now()),
+       ('BrasilAPI','empresa',false,900,null,'HTTP 429',now() - interval '1 hour'),
+       ('Site','contatos',true,2000,3,null,now() - interval '3 days'), ('Site','contatos',false,50,null,'robots',now() - interval '3 days')`,
+    );
+    const r = await s.adminProvedores();
+    const b = r.find((x) => x.provedor === "BrasilAPI")!;
+    expect(b).toMatchObject({ tipo: "empresa", chamadas24h: 3, falhas24h: 1, ultimoErro: "HTTP 429" });
+    expect(b.p50).toBe(300);
+    const site = r.find((x) => x.provedor === "Site")!;
+    expect(site).toMatchObject({ chamadas24h: 0, chamadas7d: 2, falhas7d: 1 });
+    expect((await s.adminFalhasProvedores())[0]).toMatchObject({ provedor: "BrasilAPI", erro: "HTTP 429" });
+    await db.query("insert into erro_app (origem, mensagem) values ('rota','falhou')");
+    expect((await s.adminErros())[0]).toMatchObject({ origem: "rota", mensagem: "falhou" });
+    const comum = criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [], ator: { usuarioId: USUARIO_DEMO, papel: "administrador", operadora: false } });
+    await expect(comum.adminProvedores()).rejects.toThrow(/operadora/);
+  }, 30000);
+
+  it("a ficha da empresa grava a execução de cada fonte extra (sem contar cache)", async () => {
+    const { db } = await novo();
+    const registros: { provedor: string; ok: boolean }[] = [];
+    const s = criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [], registrar: async (e) => void registros.push({ provedor: e.provedor, ok: e.ok }) });
+    await s.enriquecer("33000167000101");
+    expect(registros.length).toBeGreaterThan(0);
+    expect(registros.every((r) => r.provedor.startsWith("Informação extra:"))).toBe(true);
+  }, 30000);
+});

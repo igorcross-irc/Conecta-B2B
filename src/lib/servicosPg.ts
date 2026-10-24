@@ -6,6 +6,7 @@ import { alvoValido, chaveAlvo, normalizarBusca, somenteDigitos } from "./cnpj";
 import { lerCsv, normalizarCabecalho } from "./csv";
 import { ORG_DEMO, USUARIO_DEMO } from "@/db/local";
 import { enriquecer as enriquecerEmpresa, type Enriquecimento } from "./enriquecimento";
+import type { Registrador } from "./monitor";
 import { verificarDominiosDeEmail } from "./providers/mx";
 import { dominioSeguro } from "./providers/site";
 import type { Contato, Empresa, ProvedorContatos, ProvedorEmpresa } from "./providers/types";
@@ -33,6 +34,11 @@ export interface PesquisaFiltros {
   /** Só empresas abertas a partir desta data (AAAA-MM-DD). */
   abertaDesde?: string;
   incluirFiliais?: boolean; pagina?: number;
+}
+export interface ResumoProvedor {
+  provedor: string; tipo: string;
+  chamadas24h: number; falhas24h: number; chamadas7d: number; falhas7d: number;
+  p50?: number; p95?: number; ultimoSucesso?: string; ultimaFalha?: string; ultimoErro?: string; itensMedio?: number;
 }
 export interface PesquisaSalva {
   id: string; nome: string; filtros: FiltrosUrl; avisar: boolean; ultimoAviso: string; criadoEm: string;
@@ -111,6 +117,8 @@ interface Dependencias {
   /** Acha CNPJs publicados num site (para buscar a empresa pelo endereço do site). */
   descobridor?: (dominio: string) => Promise<{ cnpj: string; ocorrencias: number }[]>;
   org?: string;
+  /** Grava a execução de cada fonte de dados (monitoramento). */
+  registrar?: Registrador;
 }
 
 type Linha = Record<string, unknown>;
@@ -166,6 +174,7 @@ export function criarServicosPg({
   empresa: provedorEmpresa,
   contatos: provedores,
   descobridor,
+  registrar,
   org = ORG_DEMO,
   ator = { usuarioId: USUARIO_DEMO, papel: "administrador", operadora: true },
 }: Dependencias) {
@@ -988,7 +997,7 @@ export function criarServicosPg({
     async enriquecer(cnpj: string): Promise<Enriquecimento> {
       if (!alvoValido(cnpj)) throw new ErroDeNegocio("CNPJ ou site inválido.");
       const e = await servicos.consultarEmpresa(cnpj);
-      return enriquecerEmpresa(db, { cnpj: chaveAlvo(cnpj), razaoSocial: e.razaoSocial, nomeFantasia: e.nomeFantasia, dominio: e.dominio });
+      return enriquecerEmpresa(db, { cnpj: chaveAlvo(cnpj), razaoSocial: e.razaoSocial, nomeFantasia: e.nomeFantasia, dominio: e.dominio }, { registrar });
     },
 
     // ───────────── Chaves de API ─────────────
@@ -1041,6 +1050,71 @@ export function criarServicosPg({
     async cobertura(): Promise<{ uf: string; empresas: number }[]> {
       const r = await db.query<Linha>("select uf, sum(qtd)::bigint as n from rf_municipio group by uf order by uf");
       return r.rows.map((x) => ({ uf: x.uf as string, empresas: Number(x.n) }));
+    },
+
+    // ───────────── Monitoramento (operadora) ─────────────
+
+    /** Saúde de cada fonte de dados: sucesso, tempo e último erro, nas últimas 24 h e 7 dias. */
+    async adminProvedores(): Promise<ResumoProvedor[]> {
+      exigirOperadora();
+      const r = await db.query<Linha>(
+        `select provedor, tipo,
+                count(*) filter (where criado_em > now() - interval '24 hours')::int as n24,
+                count(*) filter (where criado_em > now() - interval '24 hours' and not ok)::int as falhas24,
+                count(*)::int as n7,
+                count(*) filter (where not ok)::int as falhas7,
+                (percentile_cont(0.5) within group (order by ms) filter (where criado_em > now() - interval '24 hours'))::int as p50,
+                (percentile_cont(0.95) within group (order by ms) filter (where criado_em > now() - interval '24 hours'))::int as p95,
+                max(criado_em) filter (where ok) as ultimo_ok,
+                max(criado_em) filter (where not ok) as ultima_falha,
+                (array_agg(erro order by criado_em desc) filter (where not ok))[1] as ultimo_erro,
+                (avg(itens) filter (where ok and itens is not null and criado_em > now() - interval '7 days'))::float as itens_medio
+           from provedor_execucao
+          where criado_em > now() - interval '7 days'
+          group by provedor, tipo order by provedor`,
+      );
+      const data = (v: unknown) => (v ? new Date(v as string).toISOString() : undefined);
+      return r.rows.map((x) => ({
+        provedor: x.provedor as string, tipo: x.tipo as string,
+        chamadas24h: Number(x.n24), falhas24h: Number(x.falhas24), chamadas7d: Number(x.n7), falhas7d: Number(x.falhas7),
+        p50: x.p50 == null ? undefined : Number(x.p50), p95: x.p95 == null ? undefined : Number(x.p95),
+        ultimoSucesso: data(x.ultimo_ok), ultimaFalha: data(x.ultima_falha), ultimoErro: (x.ultimo_erro as string) ?? undefined,
+        itensMedio: x.itens_medio == null ? undefined : Number(x.itens_medio),
+      }));
+    },
+
+    /** Números de saúde do sistema: banco, base da Receita, caches e falhas recentes. */
+    async adminSaude() {
+      exigirOperadora();
+      const n = async (sql: string) => Number((await um<{ n: number | string }>(sql))?.n ?? 0);
+      return {
+        bancoBytes: await n("select pg_database_size(current_database())::bigint as n"),
+        // Estimativa do planejador (instantânea); contar 2 milhões de linhas a cada abertura da tela seria lento.
+        empresasReceita: await n("select coalesce((select reltuples::bigint from pg_class where relname = 'rf_estabelecimento'), 0) as n"),
+        empresasEmCache: await n("select count(*)::int as n from empresa_cache"),
+        erros24h: await n("select count(*)::int as n from erro_app where criado_em > now() - interval '24 hours'"),
+        falhasFontes24h: await n("select count(*)::int as n from provedor_execucao where not ok and criado_em > now() - interval '24 hours'"),
+        chamadasFontes24h: await n("select count(*)::int as n from provedor_execucao where criado_em > now() - interval '24 hours'"),
+        buscasEmAndamento: await n("select count(*)::int as n from busca_job where status = 'em_andamento'"),
+        cobertura: await servicos.cobertura().catch(() => []),
+      };
+    },
+
+    /** Falhas mais recentes de fontes de dados, para investigar. */
+    async adminFalhasProvedores(limite = 30) {
+      exigirOperadora();
+      const r = await db.query<Linha>(
+        "select provedor, tipo, ms, erro, criado_em from provedor_execucao where not ok order by criado_em desc limit $1",
+        [Math.min(100, Math.max(1, limite))],
+      );
+      return r.rows.map((x) => ({ provedor: x.provedor as string, tipo: x.tipo as string, ms: Number(x.ms), erro: (x.erro as string) ?? "", quando: new Date(x.criado_em as string).toISOString() }));
+    },
+
+    /** Erros inesperados do app (rotas e telas), mais recentes primeiro. */
+    async adminErros(limite = 50) {
+      exigirOperadora();
+      const r = await db.query<Linha>("select id, origem, mensagem, detalhe, criado_em from erro_app order by criado_em desc limit $1", [Math.min(200, Math.max(1, limite))]);
+      return r.rows.map((x) => ({ id: Number(x.id), origem: x.origem as string, mensagem: x.mensagem as string, detalhe: (x.detalhe as string) ?? undefined, quando: new Date(x.criado_em as string).toISOString() }));
     },
 
     /** Sugestões ao digitar na pesquisa: cidades (da lista de municípios da base) e atividades (CNAE). */
@@ -1481,7 +1555,7 @@ export function criarServicosPg({
       return { importados, ignorados, erros: erros.slice(0, 50) };
     },
 
-    /** Sinal de compra genérico (rádio, vaga aberta, licitação, notícia etc.), sempre com fonte e data. */
+    /** Sinal de compra genérico (rádio, notícia, expansão etc.), sempre com fonte e data. */
     async registrarSinal(p: { cnpj: string; tipo: string; fonte: string; ocorridoEm: string; conteudo?: unknown }) {
       if (!alvoValido(p.cnpj)) throw new ErroDeNegocio("CNPJ inválido.");
       if (!p.tipo.trim() || !p.fonte.trim()) throw new ErroDeNegocio("Informe o tipo e a fonte do sinal.");

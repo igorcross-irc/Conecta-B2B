@@ -7,6 +7,7 @@ import { chaveGemini } from "@/lib/ia/gemini";
 import { ABERTURAS, PORTES, SETORES } from "@/lib/setores";
 import { Email, Externo, Predio, Relogio, Salvar, Sparkles, Telefone } from "@/components/Icones";
 import { removerPesquisaAcao, salvarPesquisaAcao } from "../acoes";
+import { Paginacao } from "@/components/Paginacao";
 import { BuscaNatural } from "./BuscaNatural";
 import { FiltrosPesquisa, type ValoresFiltro } from "./FiltrosPesquisa";
 
@@ -92,7 +93,6 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
     return `/pesquisar?${q}`;
   };
   const paginas = Math.max(1, Math.ceil(r.total / POR_PAGINA));
-  const janela = Array.from({ length: paginas }, (_, i) => i).filter((i) => i === 0 || i === paginas - 1 || Math.abs(i - pagina) <= 2);
   const iaAtiva = Boolean(chaveGemini());
 
   return (
@@ -226,18 +226,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
                 </ul>
               )}
 
-              {paginas > 1 && (
-                <nav className="flex flex-wrap items-center justify-center gap-1.5" aria-label="Páginas">
-                  {pagina > 0 && <Link className="chip" href={href({ pagina: String(pagina - 1) })}>← Anterior</Link>}
-                  {janela.map((i, idx) => (
-                    <span key={i} className="flex items-center gap-1.5">
-                      {idx > 0 && janela[idx - 1] !== i - 1 && <span className="text-slate-400">…</span>}
-                      <Link href={href({ pagina: String(i) })} aria-current={i === pagina ? "page" : undefined} className={i === pagina ? "chip-ativo" : "chip"}>{i + 1}</Link>
-                    </span>
-                  ))}
-                  {pagina + 1 < paginas && <Link className="chip" href={href({ pagina: String(pagina + 1) })}>Próxima →</Link>}
-                </nav>
-              )}
+              <Paginacao pagina={pagina} paginas={paginas} href={(i) => href({ pagina: String(i) })} />
             </>
           ) : (
             <div className="space-y-5">
