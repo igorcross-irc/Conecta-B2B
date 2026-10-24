@@ -1,5 +1,6 @@
 import { promises as dns } from "node:dns";
 import { isIP } from "node:net";
+import { enderecoPrivado, fetchSeguro } from "../httpSeguro";
 import { cnpjValido, somenteDigitos } from "../cnpj";
 import type { Contato, EntradaBuscaContatos, ProvedorContatos } from "./types";
 
@@ -15,30 +16,27 @@ const CAMINHOS = ["/", "/contato", "/fale-conosco", "/sobre", "/quem-somos", "/e
 const CAMINHOS_CNPJ = ["/", "/contato", "/fale-conosco", "/sobre", "/quem-somos", "/politica-de-privacidade", "/privacidade", "/termos-de-uso", "/termos"];
 const MAX_BYTES = 500_000;
 const PRAZO_MS = 8_000;
+/** Prazo somando todas as páginas de um site, e quantas baixam ao mesmo tempo. */
+const PRAZO_TOTAL_MS = 20_000;
+const SIMULTANEAS = 3;
 
 /** Prefixos de caixa genérica da empresa, em ordem de utilidade comercial. */
 const CAIXAS_COMERCIAIS = /^(comercial|vendas|contato|marketing|atendimento|sac|compras|diretoria|relacionamento)$/i;
+
+export { enderecoPrivado };
+
+/** Cliente padrão: só conecta a endereços públicos, validados no momento da conexão (sem DNS rebinding). */
+const httpSeguro = ((url: string, init?: RequestInit) =>
+  fetchSeguro(url, {
+    headers: init?.headers as Record<string, string> | undefined,
+    signal: init?.signal ?? undefined,
+    maxBytes: MAX_BYTES,
+  })) as unknown as typeof fetch;
 
 export type Resolvedor = (host: string) => Promise<string[]>;
 
 const resolverDns: Resolvedor = async (host) =>
   (await dns.lookup(host, { all: true })).map((a) => a.address);
-
-/** Endereços que nunca devem ser acessados a partir do servidor (rede interna, loopback, metadados). */
-export function enderecoPrivado(ip: string): boolean {
-  if (ip.includes(":")) {
-    const l = ip.toLowerCase();
-    return l === "::1" || l === "::" || l.startsWith("fc") || l.startsWith("fd") || l.startsWith("fe80") || l.startsWith("::ffff:");
-  }
-  const [a, b] = ip.split(".").map(Number);
-  return (
-    a === 10 || a === 127 || a === 0 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 100 && b >= 64 && b <= 127)
-  );
-}
 
 export function dominioSeguro(d: string): string | null {
   const limpo = d.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
@@ -131,7 +129,7 @@ export class SiteEmpresa implements ProvedorContatos {
   private http: typeof fetch;
   private resolver: Resolvedor;
 
-  constructor({ http = fetch, resolver = resolverDns }: Dependencias = {}) {
+  constructor({ http = httpSeguro, resolver = resolverDns }: Dependencias = {}) {
     this.http = http;
     this.resolver = resolver;
   }
@@ -167,6 +165,25 @@ export class SiteEmpresa implements ProvedorContatos {
   }
 
   /**
+   * Baixa vários caminhos do mesmo host, poucos por vez e com um prazo total, para uma busca não
+   * ocupar o tempo da rota. Respeita o robots.txt. Devolve só as páginas que vieram.
+   */
+  private async baixarVarias(host: string, caminhos: string[], robots: string): Promise<string[]> {
+    const limite = Date.now() + PRAZO_TOTAL_MS;
+    const fila = caminhos.filter((c) => !robots || permitidoPorRobots(robots, c));
+    const paginas: string[] = [];
+    const trabalhador = async () => {
+      for (let c = fila.shift(); c !== undefined; c = fila.shift()) {
+        if (Date.now() > limite) return;
+        const html = await this.baixar(host, c);
+        if (html) paginas.push(html);
+      }
+    };
+    await Promise.all(Array.from({ length: SIMULTANEAS }, trabalhador));
+    return paginas;
+  }
+
+  /**
    * Procura CNPJs publicados no site (rodapé, contato, política de privacidade e termos).
    * Devolve os CNPJs válidos em ordem de quantas vezes aparecem. Respeita robots.txt.
    */
@@ -176,10 +193,7 @@ export class SiteEmpresa implements ProvedorContatos {
     const contagem = new Map<string, number>();
     for (const host of [`www.${dominio}`, dominio]) {
       const robots = (await this.baixar(host, "/robots.txt")) ?? "";
-      for (const caminho of CAMINHOS_CNPJ) {
-        if (robots && !permitidoPorRobots(robots, caminho)) continue;
-        const html = await this.baixar(host, caminho);
-        if (!html) continue;
+      for (const html of await this.baixarVarias(host, CAMINHOS_CNPJ, robots)) {
         for (const c of extrairCnpjs(html)) contagem.set(c, (contagem.get(c) ?? 0) + 1);
       }
       if (contagem.size) break;
@@ -195,13 +209,10 @@ export class SiteEmpresa implements ProvedorContatos {
     const robots = (await this.baixar(host, "/robots.txt")) ?? "";
     const emails = new Set<string>();
     const telefones = new Set<string>();
-    for (const caminho of CAMINHOS) {
-      if (robots && !permitidoPorRobots(robots, caminho)) continue;
-      const html = await this.baixar(host, caminho);
-      if (!html) continue;
+    const paginas = await this.baixarVarias(host, CAMINHOS, robots);
+    for (const html of paginas) {
       extrairEmails(html, dominio).forEach((e) => emails.add(e));
       extrairTelefones(html).forEach((t) => telefones.add(t));
-      if (emails.size >= 8) break;
     }
 
     const agora = new Date().toISOString();
