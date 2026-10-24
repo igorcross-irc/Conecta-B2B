@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { contexto } from "@/lib/app";
+import { ABERTURAS, PORTES, SETORES } from "@/lib/setores";
 
 export const metadata = { title: "Pesquisar" };
 
@@ -12,13 +13,31 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
   await connection();
   const sp = await searchParams;
   const v = Object.fromEntries(CAMPOS.map((c) => [c, typeof sp[c] === "string" ? (sp[c] as string) : ""])) as Record<(typeof CAMPOS)[number], string>;
+  const lista = (k: string) => (Array.isArray(sp[k]) ? (sp[k] as string[]) : typeof sp[k] === "string" ? [sp[k] as string] : []);
+  const setores = lista("setor").filter((x) => SETORES.some((t) => t.id === x));
+  const portes = lista("porte").filter((x) => (PORTES as readonly string[]).includes(x));
+  const abertura = typeof sp.abertura === "string" && ABERTURAS.some((x) => x.id === sp.abertura) ? (sp.abertura as string) : "";
+  const comEmail = sp.email === "1";
+  const comTelefone = sp.telefone === "1";
+  const ordem = sp.ordem === "recentes" ? "recentes" : "nome";
   const pagina = Math.max(0, Number(typeof sp.pagina === "string" ? sp.pagina : 0) || 0);
   const filiais = sp.filiais === "1";
   const { servicos } = await contexto();
-  const r = await servicos.pesquisar({ ...v, incluirFiliais: filiais, pagina });
-  const buscou = CAMPOS.some((c) => v[c]);
-  const qs = (extra: Record<string, string>) =>
-    "?" + new URLSearchParams({ ...Object.fromEntries(CAMPOS.filter((c) => v[c]).map((c) => [c, v[c]])), ...(filiais ? { filiais: "1" } : {}), ...extra }).toString();
+  const r = await servicos.pesquisar({ ...v, setores, porte: portes, abertura: abertura || undefined, comEmail, comTelefone, ordem, incluirFiliais: filiais, pagina });
+  const buscou = CAMPOS.some((c) => v[c]) || setores.length > 0 || portes.length > 0 || Boolean(abertura) || comEmail || comTelefone;
+  const qs = (extra: Record<string, string>) => {
+    const q = new URLSearchParams();
+    for (const c of CAMPOS) if (v[c]) q.set(c, v[c]);
+    for (const x of setores) q.append("setor", x);
+    for (const x of portes) q.append("porte", x);
+    if (abertura) q.set("abertura", abertura);
+    if (comEmail) q.set("email", "1");
+    if (comTelefone) q.set("telefone", "1");
+    if (ordem === "recentes") q.set("ordem", "recentes");
+    if (filiais) q.set("filiais", "1");
+    for (const [k, val] of Object.entries(extra)) q.set(k, val);
+    return "?" + q.toString();
+  };
   return (
     <div className="space-y-6">
       <header>
@@ -32,8 +51,34 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
         <label className="text-sm">Estado (UF)<input name="uf" defaultValue={v.uf} maxLength={2} placeholder="RJ" className="campo mt-1 w-full uppercase" /></label>
         <label className="text-sm">Cidade<input name="cidade" defaultValue={v.cidade} placeholder="Rio de Janeiro" className="campo mt-1 w-full" /></label>
         <label className="text-sm">Bairro<input name="bairro" defaultValue={v.bairro} placeholder="Barra da Tijuca" className="campo mt-1 w-full" /></label>
-        <label className="flex items-center gap-2 text-sm md:col-span-2"><input type="checkbox" name="filiais" value="1" defaultChecked={filiais} /> Incluir filiais (padrão: só matrizes)</label>
-        <button className="btn md:justify-self-end">Pesquisar</button>
+        <label className="text-sm md:col-span-3">Setor
+          <select name="setor" multiple defaultValue={setores} size={6} className="campo mt-1 w-full">
+            {SETORES.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
+          </select>
+          <span className="text-xs text-slate-500">Segure Ctrl (ou Cmd) para escolher mais de um.</span>
+        </label>
+        <fieldset className="text-sm">
+          <legend>Porte</legend>
+          {PORTES.map((x) => (
+            <label key={x} className="mt-1 flex items-center gap-2"><input type="checkbox" name="porte" value={x} defaultChecked={portes.includes(x)} /> {x}</label>
+          ))}
+        </fieldset>
+        <label className="text-sm">Tempo de abertura
+          <select name="abertura" defaultValue={abertura} className="campo mt-1 w-full">
+            <option value="">Qualquer</option>
+            {ABERTURAS.map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}
+          </select>
+        </label>
+        <label className="text-sm">Ordenar por
+          <select name="ordem" defaultValue={ordem} className="campo mt-1 w-full">
+            <option value="nome">Nome</option>
+            <option value="recentes">Mais recentes primeiro</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="email" value="1" defaultChecked={comEmail} /> Com e-mail cadastral</label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="telefone" value="1" defaultChecked={comTelefone} /> Com telefone cadastral</label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="filiais" value="1" defaultChecked={filiais} /> Incluir filiais (padrão: só matrizes)</label>
+        <button className="btn md:col-span-3 md:justify-self-end">Pesquisar</button>
       </form>
 
       {buscou && !r.baseReceita && (
@@ -63,6 +108,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
                   <Link href={`/descobrir?alvo=${i.cnpj}`} className="font-medium text-marca-700 hover:underline">{i.nomeFantasia || i.razaoSocial}</Link>
                   <p className="text-xs text-slate-500">{i.razaoSocial} · {i.cnpj}</p>
                   <p className="text-xs text-slate-500">{[i.bairro, i.municipio, i.uf].filter(Boolean).join(" · ")}{i.atividade ? ` · ${i.atividade}` : ""}</p>
+                  <p className="text-xs text-slate-500">{[i.porte, i.abertaEm ? `aberta em ${i.abertaEm.slice(0, 4)}` : "", i.temEmail ? "e-mail cadastral" : "", i.temTelefone ? "telefone cadastral" : ""].filter(Boolean).join(" · ")}</p>
                 </div>
                 {i.dominio && <Link href={`/descobrir?alvo=${encodeURIComponent("site:" + i.dominio)}`} className="text-xs text-slate-600 underline">{i.dominio}</Link>}
               </li>
