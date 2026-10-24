@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { abrirBancoLocal, USUARIO_DEMO } from "@/db/local";
+import { abrirBancoLocal, ORG_DEMO, USUARIO_DEMO } from "@/db/local";
 import { ProvedorDemo } from "./providers/mock";
 import type { Empresa, ProvedorEmpresa } from "./providers/types";
 import { ErroDeNegocio } from "./servicos";
@@ -643,5 +643,44 @@ describe("exportação para CRM", () => {
     expect(linhas[0]).toMatch(/^First Name,Last Name,Email/);
     expect(csv).toContain("EMPRESA DE TESTE SA");
     expect(linhas.slice(1).filter((l) => /@/.test(l))).toHaveLength(1);
+  });
+});
+
+describe("chaves de API", () => {
+  it("cria uma vez, guarda só o hash, valida, e deixa de valer quando revogada", async () => {
+    const { db, s } = await novo();
+    const chave = await s.criarChaveApi("Integração CRM");
+    expect(chave).toMatch(/^cb2b_[0-9a-f]{48}$/);
+    expect(JSON.stringify((await db.query("select * from api_chave")).rows)).not.toContain(chave);
+    const dono = await s.validarChaveApi(chave);
+    expect(dono).toMatchObject({ usuarioId: USUARIO_DEMO });
+    const [k] = await s.chavesApi();
+    expect(k).toMatchObject({ nome: "Integração CRM", prefixo: chave.slice(0, 9), revogada: false });
+    expect(k.ultimoUso).toBeTruthy();
+    await s.revogarChaveApi(k.id);
+    expect(await s.validarChaveApi(chave)).toBeNull();
+  });
+
+  it("recusa chave com formato errado, desconhecida, e quem criou deixa de ser administrador", async () => {
+    const { db, s } = await novo();
+    expect(await s.validarChaveApi("qualquer")).toBeNull();
+    expect(await s.validarChaveApi(`cb2b_${"0".repeat(48)}`)).toBeNull();
+    const chave = await s.criarChaveApi("x");
+    // Outro administrador assume (a organização não pode ficar sem um), e quem criou a chave vira membro comum.
+    const outro = "00000000-0000-0000-0000-0000000000f9";
+    await db.query("insert into auth.users values ($1)", [outro]);
+    await db.query(`insert into neon_auth."user" (id, name, email) values ($1, 'Outro', 'outro@x.com')`, [outro]);
+    await db.query("insert into membro values ($1, $2, 'administrador')", [ORG_DEMO, outro]);
+    await db.query("update membro set papel = 'membro' where usuario_id = $1", [USUARIO_DEMO]);
+    expect(await s.validarChaveApi(chave)).toBeNull();
+  });
+
+  it("só administrador gerencia chaves e há limite de chaves ativas", async () => {
+    const { db, s } = await novo();
+    for (let i = 0; i < 10; i++) await s.criarChaveApi(`k${i}`);
+    await expect(s.criarChaveApi("11")).rejects.toThrow(/Limite/);
+    await expect(s.criarChaveApi("")).rejects.toThrow(/nome/);
+    const membro = criarServicosPg({ db: papel(db), empresa: provedorEmpresa, contatos: [], ator: { usuarioId: USUARIO_DEMO, papel: "membro", operadora: false } });
+    await expect(membro.chavesApi()).rejects.toThrow();
   });
 });

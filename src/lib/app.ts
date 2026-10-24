@@ -111,6 +111,29 @@ export async function pedirOptOutPublico(email: string): Promise<{ confirmacaoPo
   return { confirmacaoPorEmail: true };
 }
 
+/**
+ * Serviços de uma requisição da API pública (chave no cabeçalho Authorization: Bearer cb2b_...).
+ * Devolve uma Response de erro pronta quando a chave falta, é inválida ou passou do limite de 600 pedidos por hora.
+ */
+export async function servicosPorChave(req: Request): Promise<{ servicos: ServicosPg } | { erro: Response }> {
+  const m = (req.headers.get("authorization") ?? "").match(/^Bearer (cb2b_[0-9a-f]{48})$/);
+  if (!m) return { erro: Response.json({ erro: "Envie a chave em Authorization: Bearer cb2b_..." }, { status: 401 }) };
+  const banco = await banco$();
+  const publico = criarServicosPg({ db: banco.comUsuario(ZERO), org: ZERO, ...provedores() });
+  const dono = await publico.validarChaveApi(m[1]);
+  if (!dono) return { erro: Response.json({ erro: "Chave inválida ou revogada." }, { status: 401 }) };
+  const servicos = criarServicosPg({
+    db: banco.comUsuario(dono.usuarioId),
+    org: dono.orgId,
+    ator: { usuarioId: dono.usuarioId, papel: "administrador", operadora: false },
+    ...provedores(),
+  });
+  if (!(await servicos.permitirPedido(`api:${dono.orgId}`, 600, 3600))) {
+    return { erro: Response.json({ erro: "Limite de 600 pedidos por hora atingido." }, { status: 429 }) };
+  }
+  return { servicos };
+}
+
 /** Avisos diários das pesquisas salvas (chamado pelo cron). */
 export async function rodarAlertasPublico() {
   return (await servicosPublicos()).rodarAlertas(enviarEmail, urlPublica());

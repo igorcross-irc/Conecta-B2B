@@ -12,6 +12,8 @@ export interface Resultado {
   erro?: string;
   ok?: string;
   link?: string;
+  /** Chave de API recém-criada: aparece uma única vez. */
+  chave?: string;
 }
 
 async function executar(fn: () => Promise<Resultado | void>, rev?: string): Promise<Resultado> {
@@ -150,4 +152,17 @@ export async function removerPesquisaAcao(d: FormData) {
     await (await contexto()).servicos.removerPesquisa(texto(d, "id"));
   });
   redirect(`/pesquisar?${texto(d, "volta")}`);
+}
+
+export async function criarChaveApiAcao(_: Resultado, d: FormData): Promise<Resultado> {
+  return executar(async () => {
+    const chave = await (await contexto()).servicos.criarChaveApi(texto(d, "nome"));
+    return { ok: "Chave criada. Copie agora: ela não será mostrada de novo.", chave };
+  }, "/configuracoes");
+}
+
+export async function revogarChaveApiAcao(d: FormData) {
+  await executar(async () => {
+    await (await contexto()).servicos.revogarChaveApi(texto(d, "id"));
+  }, "/configuracoes");
 }
