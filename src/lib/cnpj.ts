@@ -25,7 +25,9 @@ export function cnpjValido(valor: string): boolean {
   return cnpj.endsWith(`${d1}${d2}`);
 }
 
+/** CNPJ para exibição ("33.000.167/0001-01"); alvo por site mostra o domínio; qualquer outra coisa volta como veio. */
 export function formatarCnpj(valor: string): string {
+  if (valor.startsWith("site:")) return valor.slice(5);
   const c = somenteDigitos(valor);
   if (c.length !== 14) return valor;
   return `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12)}`;

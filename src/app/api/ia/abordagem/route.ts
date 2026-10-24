@@ -2,7 +2,7 @@ import { contexto, registrarFonte, responderErro } from "@/lib/app";
 import { medir } from "@/lib/monitor";
 import { redigirAbordagem } from "@/lib/ia/assistente";
 import { chaveGemini } from "@/lib/ia/gemini";
-import { ErroDeNegocio } from "@/lib/servicos";
+import { ErroDeNegocio } from "@/lib/erros";
 
 /** POST /api/ia/abordagem  { contatoId, canal, proposta, remetente? } -> { mensagem }. Não usa e-mail nem telefone do contato. */
 export async function POST(req: Request) {

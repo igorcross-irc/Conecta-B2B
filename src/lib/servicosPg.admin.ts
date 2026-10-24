@@ -1,6 +1,6 @@
 import { estadoDaFonte } from "./monitor";
 import { TABELA_CUSTOS_PADRAO, type TabelaCustos } from "./credits";
-import { ErroDeNegocio } from "./servicos";
+import { ErroDeNegocio } from "./erros";
 import { Linha, ResumoProvedor, UUID } from "./servicosPg.tipos";
 import type { Ctx } from "./servicosPg.contexto";
 

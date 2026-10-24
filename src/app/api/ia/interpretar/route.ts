@@ -2,7 +2,7 @@ import { contexto, registrarFonte, responderErro } from "@/lib/app";
 import { medir } from "@/lib/monitor";
 import { interpretarBusca } from "@/lib/ia/assistente";
 import { chaveGemini } from "@/lib/ia/gemini";
-import { ErroDeNegocio } from "@/lib/servicos";
+import { ErroDeNegocio } from "@/lib/erros";
 
 /** POST /api/ia/interpretar  { texto }  -> filtros da pesquisa (validados contra listas fechadas). 30 por hora por usuário. */
 export async function POST(req: Request) {

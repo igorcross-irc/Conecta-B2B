@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { ErroDeNegocio } from "./servicos";
+import { ErroDeNegocio } from "./erros";
 import { Linha, UUID, hashToken } from "./servicosPg.tipos";
 import type { Ctx } from "./servicosPg.contexto";
 

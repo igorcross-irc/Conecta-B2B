@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { contexto } from "@/lib/app";
 import { COOKIE_ORG } from "@/lib/sessao";
-import { ErroDeNegocio } from "@/lib/servicos";
+import { ErroDeNegocio } from "@/lib/erros";
 import type { TabelaCustos } from "@/lib/credits";
 
 export interface Resultado {

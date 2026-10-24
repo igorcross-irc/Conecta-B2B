@@ -1,7 +1,7 @@
 import { alvoValido, chaveAlvo } from "./cnpj";
 import { dominioSeguro } from "./providers/site";
 import type { Contato, Empresa } from "./providers/types";
-import { ErroDeNegocio } from "./servicos";
+import { ErroDeNegocio } from "./erros";
 import { ItemBase, Linha, VALIDADE_SQL } from "./servicosPg.tipos";
 import type { Ctx } from "./servicosPg.contexto";
 

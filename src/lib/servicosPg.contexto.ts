@@ -3,7 +3,8 @@ import { chaveAlvo } from "./cnpj";
 import { ORG_DEMO, USUARIO_DEMO } from "@/db/local";
 import { verificarDominiosDeEmail } from "./providers/mx";
 import { type Contato, type Empresa, VERSAO_EMPRESA } from "./providers/types";
-import { ErroDeNegocio, visivel, type ContatoGuardado } from "./servicos";
+import { ErroDeNegocio } from "./erros";
+import { visivel, type ContatoGuardado } from "./contatos";
 import { Ator, Cruzados, Dependencias, EstadoBusca, Linha, SELECT_CONTATO, TEMPO_MAXIMO_BUSCA_MIN, VALIDADE_SQL, paraGuardado, traduzir } from "./servicosPg.tipos";
 
 

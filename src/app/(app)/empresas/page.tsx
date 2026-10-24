@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { contexto } from "@/lib/app";
+import { formatarCnpj } from "@/lib/cnpj";
 import { Email, Listas as Lista, Pessoa, Predio, Relogio, Telefone } from "@/components/Icones";
 
 export const metadata = { title: "Minhas empresas" };
 
-const fmtCnpj = (c: string) => (c.startsWith("site:") ? c.slice(5) : c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"));
 const quando = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
 
 export default async function MinhasEmpresas({ searchParams }: PageProps<"/empresas">) {
@@ -62,7 +62,7 @@ export default async function MinhasEmpresas({ searchParams }: PageProps<"/empre
                 <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-marca-50 text-lg font-semibold text-marca-700 sm:flex" aria-hidden>{e.nome.charAt(0)}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block break-words font-semibold text-marca-800">{e.nome}</span>
-                  <span className="block text-xs text-slate-500">{fmtCnpj(e.cnpj)}{e.razaoSocial && e.razaoSocial !== e.nome ? ` · ${e.razaoSocial}` : ""}</span>
+                  <span className="block text-xs text-slate-500">{formatarCnpj(e.cnpj)}{e.razaoSocial && e.razaoSocial !== e.nome ? ` · ${e.razaoSocial}` : ""}</span>
                   <span className="mt-0.5 block text-sm text-slate-600">{[e.municipio && `${e.municipio}${e.uf ? `/${e.uf}` : ""}`, e.porte, e.atividade].filter(Boolean).join(" · ") || "Dados cadastrais ainda não carregados"}</span>
                   <span className="mt-2 flex flex-wrap gap-1.5 text-xs">
                     <span className={e.pessoas ? "selo" : "selo-cinza"}><Pessoa width={12} height={12} className="mr-1" />{e.pessoas} pessoa{e.pessoas === 1 ? "" : "s"}</span>

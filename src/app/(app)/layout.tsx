@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { contexto } from "@/lib/app";
-import { ErroDeNegocio } from "@/lib/servicos";
+import { ErroDeNegocio } from "@/lib/erros";
 import { Logo, LogoIcone } from "@/components/Logo";
 import { BarraProgresso } from "@/components/BarraProgresso";
 import { Menu, type ItemMenu } from "@/components/Menu";

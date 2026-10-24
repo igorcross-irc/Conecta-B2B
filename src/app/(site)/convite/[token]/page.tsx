@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { contexto } from "@/lib/app";
-import { ErroDeNegocio } from "@/lib/servicos";
+import { ErroDeNegocio } from "@/lib/erros";
 import { aceitarConvite } from "../../../(app)/acoes";
 
 export const metadata = { title: "Convite" };
