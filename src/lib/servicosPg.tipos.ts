@@ -19,6 +19,10 @@ export interface PesquisaFiltros {
   /** Só empresas abertas a partir desta data (AAAA-MM-DD). */
   abertaDesde?: string;
   incluirFiliais?: boolean; pagina?: number;
+  /** Itens por página (padrão 25; a exportação usa até 5.000). */
+  porPagina?: number;
+  /** Traz também e-mail, telefone e CNAE cadastrais de cada empresa (para exportação). */
+  completo?: boolean;
 }
 export interface ResumoProvedor {
   provedor: string; tipo: string;
@@ -32,6 +36,8 @@ export interface ItemPesquisa {
   cnpj: string; razaoSocial: string; nomeFantasia?: string; municipio?: string; uf?: string;
   bairro?: string; atividade?: string; dominio?: string;
   porte?: string; abertaEm?: string; temEmail: boolean; temTelefone: boolean; matriz: boolean;
+  /** Só com `completo`: dados cadastrais da Receita. */
+  email?: string; telefone?: string; cnae?: number;
 }
 export interface ResultadoPesquisa { itens: ItemPesquisa[]; total: number; baseReceita: boolean; sites: string[] }
 

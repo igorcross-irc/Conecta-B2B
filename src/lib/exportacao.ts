@@ -10,6 +10,8 @@ export interface LinhaExportacao {
   origem: string;
   empresa?: string;
   site?: string;
+  /** CNPJ (14 dígitos), para o CRM não duplicar a empresa. */
+  cnpj?: string;
 }
 
 export const FORMATOS = ["padrao", "hubspot", "rdstation", "pipedrive"] as const;
@@ -36,6 +38,8 @@ const COLUNAS: Record<FormatoExportacao, { cabecalho: string; valor: (l: LinhaEx
     { cabecalho: "Telefone", valor: (l) => l.telefone },
     { cabecalho: "LinkedIn", valor: (l) => l.linkedin },
     { cabecalho: "Origem", valor: (l) => l.origem },
+    { cabecalho: "Empresa", valor: (l) => l.empresa },
+    { cabecalho: "CNPJ", valor: (l) => l.cnpj },
   ],
   hubspot: [
     { cabecalho: "First Name", valor: (l) => separarNome(l.nome)[0] },
@@ -46,6 +50,7 @@ const COLUNAS: Record<FormatoExportacao, { cabecalho: string; valor: (l: LinhaEx
     { cabecalho: "Company Name", valor: (l) => l.empresa },
     { cabecalho: "Website URL", valor: (l) => l.site },
     { cabecalho: "LinkedIn", valor: (l) => l.linkedin },
+    { cabecalho: "CNPJ", valor: (l) => l.cnpj },
   ],
   rdstation: [
     { cabecalho: "Nome", valor: (l) => l.nome },
@@ -55,6 +60,7 @@ const COLUNAS: Record<FormatoExportacao, { cabecalho: string; valor: (l: LinhaEx
     { cabecalho: "Telefone", valor: (l) => l.telefone },
     { cabecalho: "Website", valor: (l) => l.site },
     { cabecalho: "LinkedIn", valor: (l) => l.linkedin },
+    { cabecalho: "CNPJ", valor: (l) => l.cnpj },
   ],
   pipedrive: [
     { cabecalho: "Person - Name", valor: (l) => l.nome },
@@ -63,6 +69,7 @@ const COLUNAS: Record<FormatoExportacao, { cabecalho: string; valor: (l: LinhaEx
     { cabecalho: "Person - Job title", valor: (l) => l.cargo },
     { cabecalho: "Organization - Name", valor: (l) => l.empresa },
     { cabecalho: "Person - LinkedIn", valor: (l) => l.linkedin },
+    { cabecalho: "Organization - CNPJ", valor: (l) => l.cnpj },
   ],
 };
 
@@ -74,4 +81,73 @@ export function montarCsv(formato: FormatoExportacao, linhas: LinhaExportacao[])
   const cols = COLUNAS[formato];
   const corpo = linhas.map((l) => cols.map((c) => celulaCsv(c.valor(l))).join(","));
   return "﻿" + [cols.map((c) => c.cabecalho).join(","), ...corpo].join("\r\n");
+}
+
+/** Uma empresa da pesquisa (dados públicos da Receita), para importar como empresa no CRM. */
+export interface EmpresaExportacao {
+  cnpj: string;
+  razaoSocial: string;
+  nomeFantasia?: string;
+  uf?: string;
+  municipio?: string;
+  bairro?: string;
+  atividade?: string;
+  cnae?: number;
+  porte?: string;
+  abertaEm?: string;
+  email?: string;
+  telefone?: string;
+  site?: string;
+}
+
+const COLUNAS_EMPRESA: Record<FormatoExportacao, { cabecalho: string; valor: (e: EmpresaExportacao) => string | undefined }[]> = {
+  padrao: [
+    { cabecalho: "CNPJ", valor: (e) => e.cnpj },
+    { cabecalho: "Razão social", valor: (e) => e.razaoSocial },
+    { cabecalho: "Nome fantasia", valor: (e) => e.nomeFantasia },
+    { cabecalho: "UF", valor: (e) => e.uf },
+    { cabecalho: "Município", valor: (e) => e.municipio },
+    { cabecalho: "Bairro", valor: (e) => e.bairro },
+    { cabecalho: "Atividade", valor: (e) => e.atividade },
+    { cabecalho: "CNAE", valor: (e) => (e.cnae ? String(e.cnae) : undefined) },
+    { cabecalho: "Porte", valor: (e) => e.porte },
+    { cabecalho: "Abertura", valor: (e) => e.abertaEm },
+    { cabecalho: "E-mail cadastral", valor: (e) => e.email },
+    { cabecalho: "Telefone cadastral", valor: (e) => e.telefone },
+    { cabecalho: "Site", valor: (e) => e.site },
+  ],
+  hubspot: [
+    { cabecalho: "Company name", valor: (e) => e.nomeFantasia || e.razaoSocial },
+    { cabecalho: "Company domain name", valor: (e) => e.site },
+    { cabecalho: "Phone Number", valor: (e) => e.telefone },
+    { cabecalho: "City", valor: (e) => e.municipio },
+    { cabecalho: "State/Region", valor: (e) => e.uf },
+    { cabecalho: "Industry", valor: (e) => e.atividade },
+    { cabecalho: "Razão social", valor: (e) => e.razaoSocial },
+    { cabecalho: "CNPJ", valor: (e) => e.cnpj },
+  ],
+  rdstation: [
+    { cabecalho: "Empresa", valor: (e) => e.nomeFantasia || e.razaoSocial },
+    { cabecalho: "Razão social", valor: (e) => e.razaoSocial },
+    { cabecalho: "CNPJ", valor: (e) => e.cnpj },
+    { cabecalho: "Site", valor: (e) => e.site },
+    { cabecalho: "Telefone", valor: (e) => e.telefone },
+    { cabecalho: "Cidade", valor: (e) => e.municipio },
+    { cabecalho: "Estado", valor: (e) => e.uf },
+    { cabecalho: "Segmento", valor: (e) => e.atividade },
+  ],
+  pipedrive: [
+    { cabecalho: "Organization - Name", valor: (e) => e.nomeFantasia || e.razaoSocial },
+    { cabecalho: "Organization - Address", valor: (e) => [e.bairro, e.municipio, e.uf].filter(Boolean).join(", ") || undefined },
+    { cabecalho: "Organization - Phone", valor: (e) => e.telefone },
+    { cabecalho: "Organization - Website", valor: (e) => e.site },
+    { cabecalho: "Organization - CNPJ", valor: (e) => e.cnpj },
+    { cabecalho: "Organization - Segmento", valor: (e) => e.atividade },
+  ],
+};
+
+/** CSV de empresas (não de pessoas), com os mesmos cuidados: BOM, proteção contra fórmula de planilha. */
+export function montarCsvEmpresas(formato: FormatoExportacao, empresas: EmpresaExportacao[]): string {
+  const cols = COLUNAS_EMPRESA[formato];
+  return "\uFEFF" + [cols.map((c) => c.cabecalho).join(","), ...empresas.map((e) => cols.map((c) => celulaCsv(c.valor(e))).join(","))].join("\r\n");
 }

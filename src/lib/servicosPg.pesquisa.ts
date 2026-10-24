@@ -22,6 +22,8 @@ export function criarPesquisa(c: Ctx) {
       const segmento = normalizarBusca(f.segmento ?? "");
       const todasMatrizes = f.incluirFiliais === true;
       const pagina = Math.max(0, Math.floor(f.pagina ?? 0));
+      // Tela: 25 por página. Exportação: até 5.000 de uma vez (o valor entra no SQL, por isso só inteiro dentro do limite).
+      const porPagina = Math.min(5000, Math.max(1, Math.floor(f.porPagina ?? 25)));
       const setores = (f.setores ?? []).filter(Boolean);
       const portes = (f.porte ?? []).filter((x) => (PORTES as readonly string[]).includes(x));
       const abertura = ABERTURAS.find((a) => a.id === f.abertura);
@@ -63,9 +65,10 @@ export function criarPesquisa(c: Ctx) {
       const r = await db.query(
         `select count(*) over ()::int as total_geral, e.cnpj, e.razao_social, e.nome_fantasia, e.municipio, e.uf, e.bairro, e.cnae, c.descricao as atividade,
                 e.porte, e.aberta_em, e.matriz, (e.email is not null) as tem_email, (e.telefone is not null) as tem_telefone,
+                ${f.completo ? "e.email as email_cad, e.telefone as telefone_cad, e.cnae as cnae_cod," : ""}
                 (select i.dominio from base_empresa_info i where i.cnpj = e.cnpj) as dominio
            from rf_estabelecimento e left join rf_cnae c on c.codigo = e.cnae
-          where ${w} order by ${f.ordem === "recentes" ? "e.aberta_em desc nulls last, e.razao_social" : "e.razao_social"} limit 25 offset ${add(pagina * 25)}`,
+          where ${w} order by ${f.ordem === "recentes" ? "e.aberta_em desc nulls last, e.razao_social" : "e.razao_social"} limit ${porPagina} offset ${add(pagina * porPagina)}`,
         p,
       );
       let totalGeral = r.rows.length ? Number(r.rows[0].total_geral) : 0;
@@ -99,6 +102,7 @@ export function criarPesquisa(c: Ctx) {
           dominio: (x.dominio as string) ?? undefined,
           porte: (x.porte as string) ?? undefined,
           abertaEm: x.aberta_em ? new Date(x.aberta_em as string).toISOString().slice(0, 10) : undefined,
+          ...(f.completo ? { email: (x.email_cad as string) ?? undefined, telefone: (x.telefone_cad as string) ?? undefined, cnae: x.cnae_cod == null ? undefined : Number(x.cnae_cod) } : {}),
           temEmail: x.tem_email === true,
           temTelefone: x.tem_telefone === true,
           matriz: x.matriz === true,

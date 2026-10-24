@@ -5,7 +5,8 @@ import { emailConfigurado } from "@/lib/email";
 import { limparFiltros, paraParametros, resumoFiltros } from "@/lib/filtrosUrl";
 import { chaveGemini } from "@/lib/ia/gemini";
 import { ABERTURAS, PORTES, SETORES } from "@/lib/setores";
-import { Email, Externo, Predio, Relogio, Salvar, Sparkles, Telefone } from "@/components/Icones";
+import { Email, Externo, Importar, Predio, Relogio, Salvar, Sparkles, Telefone } from "@/components/Icones";
+import { FORMATOS, ROTULO_FORMATO } from "@/lib/exportacao";
 import { removerPesquisaAcao, salvarPesquisaAcao } from "../acoes";
 import { Paginacao } from "@/components/Paginacao";
 import { BuscaNatural } from "./BuscaNatural";
@@ -167,6 +168,24 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
                   <Link href={href({ ordem: "recentes", pagina: "0" })} className={v.ordem === "recentes" ? "chip-ativo" : "chip"}>Mais recentes</Link>
                 </div>
               </div>
+
+              {r.total > 0 && (
+                <details className="cartao p-0">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-marca-800 marker:hidden">
+                    <Importar width={18} height={18} /> Exportar estas {r.total.toLocaleString("pt-BR")} empresas para planilha ou CRM
+                  </summary>
+                  <div className="space-y-2 border-t border-slate-100 p-4 text-sm">
+                    <div className="flex flex-wrap gap-2">
+                      {FORMATOS.map((f) => (
+                        <a key={f} className="btn-sec" href={`/api/pesquisar/exportar?${paramsAtuais}${paramsAtuais ? "&" : ""}formato=${f}`}>{f === "padrao" ? "CSV padrão" : ROTULO_FORMATO[f]}</a>
+                      ))}
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Dados públicos da Receita (não gasta crédito). Cada arquivo leva até 5.000 empresas{r.total > 5000 ? `; para as demais, acrescente &pagina=1, 2…` : ""}. Contatos de pessoas saem das listas, depois de revelados.
+                    </p>
+                  </div>
+                </details>
+              )}
 
               <details className="cartao group p-0">
                 <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-marca-800 marker:hidden">

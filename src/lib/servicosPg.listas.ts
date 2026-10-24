@@ -67,6 +67,7 @@ export function criarListas(c: Ctx) {
         return {
           nome: v.nome, cargo: v.cargo, email: v.email, telefone: v.telefone, linkedin: v.linkedinUrl, origem: v.origem,
           empresa: (e?.fantasia as string) || (e?.razao as string) || undefined,
+          cnpj: g.cnpj.startsWith("site:") ? undefined : g.cnpj,
           site: (e?.dominio as string) || (g.cnpj.startsWith("site:") ? g.cnpj.slice(5) : undefined),
         };
       });

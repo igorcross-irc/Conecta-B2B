@@ -749,3 +749,22 @@ describe("monitoramento das fontes", () => {
     expect(registros.every((r) => r.provedor.startsWith("Informação extra:"))).toBe(true);
   }, 30000);
 });
+
+describe("pesquisa para exportação", () => {
+  it("devolve e-mail, telefone e CNAE só com `completo`, e respeita porPagina", async () => {
+    const { db, s } = await novo();
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, nome_fantasia, matriz, situacao, cnae, uf, municipio, email, telefone, busca) values
+       ('33000167000101','A',null,true,'ATIVA',1091102,'RJ','NITEROI','a@a.com','2133334444','a'),
+       ('11222333000181','B',null,true,'ATIVA',1091102,'RJ','NITEROI',null,null,'b'),
+       ('00000000000191','C',null,true,'ATIVA',1091102,'RJ','NITEROI',null,null,'c')`,
+    );
+    const simples = await s.pesquisar({ uf: "RJ" });
+    expect(simples.itens[0].email).toBeUndefined();
+    const completo = await s.pesquisar({ uf: "RJ", completo: true, porPagina: 2 });
+    expect(completo.itens).toHaveLength(2);
+    expect(completo.total).toBe(3);
+    expect(completo.itens.find((i) => i.cnpj === "33000167000101")).toMatchObject({ email: "a@a.com", telefone: "2133334444", cnae: 1091102 });
+    expect((await s.pesquisar({ uf: "RJ", porPagina: 2, pagina: 1 })).itens).toHaveLength(1);
+  }, 30000);
+});
