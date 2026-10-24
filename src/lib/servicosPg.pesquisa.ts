@@ -264,7 +264,7 @@ export function criarPesquisa(c: Ctx) {
           const desde = new Date(p.ultimo_aviso as string).toISOString().slice(0, 10);
           const r = await servicos.pesquisar({ ...f, abertaDesde: desde, ordem: "recentes" });
           if (r.total > 0) {
-            const linhas = r.itens.slice(0, 10).map((i) => `- ${i.nomeFantasia || i.razaoSocial} (${[i.municipio, i.uf].filter(Boolean).join("/")}) ${urlBase}/descobrir?alvo=${i.cnpj}`);
+            const linhas = r.itens.slice(0, 10).map((i) => `- ${i.nomeFantasia || i.razaoSocial} (${[i.municipio, i.uf].filter(Boolean).join("/")}) ${urlBase}/empresa/${i.cnpj}`);
             await enviar({
               para: String(p.email),
               assunto: `${r.total} empresa(s) nova(s) em "${p.nome}"`,

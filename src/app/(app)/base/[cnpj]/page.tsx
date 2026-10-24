@@ -39,7 +39,7 @@ export default async function Ficha({ params }: PageProps<"/base/[cnpj]">) {
             </div>
           </div>
         </div>
-        <Link href={`/descobrir?alvo=${e.cnpj}`} className="btn-destaque shrink-0">Ver ficha e decisores</Link>
+        <Link href={`/empresa/${e.cnpj}?de=${encodeURIComponent("/base")}`} className="btn-destaque shrink-0">Ver ficha e decisores</Link>
       </section>
 
       <div className="grid gap-4 lg:grid-cols-2">

@@ -66,7 +66,7 @@ export default async function Base({ searchParams }: PageProps<"/base">) {
           <IconeBase width={34} height={34} className="text-slate-400" />
           <p className="font-medium text-tinta">{filtrando ? "Nada com esses filtros" : "A base ainda está vazia"}</p>
           <p>{filtrando ? "Tente outra palavra ou remova um filtro." : "Pesquise uma empresa e ela entra aqui para todos reaproveitarem."}</p>
-          <Link href="/descobrir" className="btn-primario mt-1">Pesquisar uma empresa</Link>
+          <Link href="/pesquisar" className="btn-primario mt-1">Pesquisar uma empresa</Link>
         </div>
       ) : (
         <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">

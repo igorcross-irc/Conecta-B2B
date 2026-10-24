@@ -609,7 +609,7 @@ describe("pesquisas salvas e avisos", () => {
     expect(enviados[0].texto).toContain("Pão Novo");
     expect(enviados[0].texto).not.toContain("Pão Velho");
     expect(enviados[0].texto).not.toContain("Pão SP");
-    expect(enviados[0].texto).toContain("https://app.exemplo/descobrir?alvo=33000167000101");
+    expect(enviados[0].texto).toContain("https://app.exemplo/empresa/33000167000101");
     expect(await s.rodarAlertas(async () => {}, "https://app.exemplo")).toEqual({ avaliadas: 0, enviadas: 0, falhas: 0 });
   });
 
@@ -847,5 +847,75 @@ describe("mercado (tamanho e visões)", () => {
     const rj = (await s.mercado({ uf: "RJ" }))!;
     expect(rj.total).toBe(2);
     expect(rj.porSetor).toHaveLength(1);
+  }, 30000);
+});
+
+describe("minhas empresas (consolidado por empresa)", () => {
+  const OUTRA = "00000000-0000-0000-0000-0000000000e1";
+  const contato = (db: PGlite, org: string, cnpj: string, nome: string, extra = "") =>
+    db.query(
+      `insert into contato (organizacao_id, cnpj, nome, cargo, origem, obtido_em, confianca ${extra ? ", " + extra.split("=")[0] : ""})
+       values ($1, $2, $3, 'Diretor', 'teste', now() - interval '90 days', 0.7 ${extra ? ", " + extra.split("=")[1] : ""}) returning id`,
+      [org, cnpj, nome],
+    );
+
+  it("junta cada empresa uma vez, com pessoas, revelados, listas e buscas, da mais recente à mais antiga", async () => {
+    const { db, s } = await novo();
+    expect(await s.empresasTrabalhadas()).toEqual([]);
+    await db.query("insert into organizacao (id, nome) values ($1, 'Outra')", [OUTRA]);
+    await db.query(
+      `insert into empresa_cache (cnpj, dados, fonte) values
+       ('33000167000101', '{"razaoSocial":"ALFA LTDA","nomeFantasia":"Alfa Pães","municipio":"NITEROI","uf":"RJ","porte":"Demais","cnaePrincipal":{"descricao":"Padaria"}}', 't'),
+       ('11222333000181', '{"razaoSocial":"BETA SERVICOS LTDA","nomeFantasia":"  ","municipio":"SAO PAULO","uf":"SP"}', 't')`,
+    );
+    const a1 = (await contato(db, ORG_DEMO, "33000167000101", "Ana Lima", "email_revelado=true")).rows[0] as { id: string };
+    const a2 = (await contato(db, ORG_DEMO, "33000167000101", "Bruno Costa", "telefone_revelado=true")).rows[0] as { id: string };
+    await contato(db, ORG_DEMO, "11222333000181", "Carla Dias");
+    await contato(db, ORG_DEMO, "site:exemplo.com.br", "Davi Rocha");
+    await contato(db, OUTRA, "33000167000101", "Pessoa De Outra Org"); // nunca aparece para a organização demo
+    await db.query("insert into busca_job (organizacao_id, cnpj, chave, status, criado_em) values ($1, '33000167000101', 'k1', 'concluida', now() - interval '2 hours'), ($1, '33000167000101', 'k2', 'erro', now() - interval '1 hour'), ($1, '00000000000191', 'k3', 'erro', now() - interval '3 hours')", [ORG_DEMO]);
+    const l1 = await s.criarLista("L1");
+    const l2 = await s.criarLista("L2");
+    await s.adicionarALista(l1.id, [a1.id, a2.id]);
+    await s.adicionarALista(l2.id, [a1.id]);
+
+    const r = await s.empresasTrabalhadas();
+    expect(r.map((x) => x.cnpj).sort()).toEqual(["00000000000191", "11222333000181", "33000167000101", "site:exemplo.com.br"]);
+    const alfa = r.find((x) => x.cnpj === "33000167000101")!;
+    expect(alfa).toMatchObject({ nome: "Alfa Pães", razaoSocial: "ALFA LTDA", municipio: "NITEROI", uf: "RJ", atividade: "Padaria", pessoas: 2, emailsRevelados: 1, telefonesRevelados: 1, listas: 2, buscas: 2 });
+    expect(alfa.ultimaBusca).toBe("erro"); // a mais recente das duas buscas
+    // nome fantasia só com espaços cai para a razão social; site vira o domínio; sem cache vira o CNPJ
+    expect(r.find((x) => x.cnpj === "11222333000181")!.nome).toBe("BETA SERVICOS LTDA");
+    expect(r.find((x) => x.cnpj === "site:exemplo.com.br")!.nome).toBe("exemplo.com.br");
+    const soBusca = r.find((x) => x.cnpj === "00000000000191")!;
+    expect(soBusca).toMatchObject({ nome: "00000000000191", pessoas: 0, buscas: 1, ultimaBusca: "erro" });
+    // a mais recente primeiro: as buscas de agora vêm antes dos contatos de 90 dias atrás
+    expect(["33000167000101", "00000000000191"]).toContain(r[0].cnpj);
+    expect(r.at(-1)!.pessoas).toBe(1);
+  }, 30000);
+
+  it("filtra por texto sem acento e respeita o limite", async () => {
+    const { db, s } = await novo();
+    await db.query(`insert into empresa_cache (cnpj, dados, fonte) values ('33000167000101', '{"razaoSocial":"PADARIA SÃO JOÃO","municipio":"NITERÓI","uf":"RJ"}', 't')`);
+    await contato(db, ORG_DEMO, "33000167000101", "Ana Lima");
+    await contato(db, ORG_DEMO, "11222333000181", "Beto Dias");
+    expect((await s.empresasTrabalhadas({ q: "sao joao" })).map((x) => x.cnpj)).toEqual(["33000167000101"]);
+    expect((await s.empresasTrabalhadas({ q: "niteroi" })).length).toBe(1);
+    expect((await s.empresasTrabalhadas({ q: "zzz" })).length).toBe(0);
+    expect((await s.empresasTrabalhadas({ limite: 1 })).length).toBe(1);
+  }, 30000);
+
+  it("contatosDaEmpresa traz tudo que foi colhido, de qualquer data, mascarado, e só da organização", async () => {
+    const { db, s } = await novo();
+    await db.query("insert into organizacao (id, nome) values ($1, 'Outra')", [OUTRA]);
+    await contato(db, ORG_DEMO, "33000167000101", "Ana Lima"); // 90 dias atrás: a "última busca" de 24 h não a traria
+    await contato(db, ORG_DEMO, "33000167000101", "Bruno Costa");
+    await contato(db, OUTRA, "33000167000101", "Intrusa");
+    await contato(db, ORG_DEMO, "11222333000181", "De outra empresa");
+    const r = await s.contatosDaEmpresa("33.000.167/0001-01");
+    expect(r.map((x) => x.nome).sort()).toEqual(["Ana Lima", "Bruno Costa"]);
+    expect(r.every((x) => x.email === undefined && x.telefone === undefined)).toBe(true);
+    expect(await s.contatosDaEmpresa("site:sem-ninguem.com.br")).toEqual([]);
+    await expect(s.contatosDaEmpresa("abc")).rejects.toThrow();
   }, 30000);
 });

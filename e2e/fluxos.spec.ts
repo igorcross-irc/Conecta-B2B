@@ -21,8 +21,8 @@ test.describe("pesquisar empresas", () => {
     await expect(page.getByRole("link", { name: /Estado: RJ/ })).toBeVisible();
 
     // Soma um filtro de nome: sobra uma.
-    await page.getByPlaceholder("Ex.: Atacadão, padaria").fill("estrela");
-    await page.getByPlaceholder("Ex.: Atacadão, padaria").press("Enter");
+    await page.getByLabel("Nome da empresa, CNPJ ou site").fill("estrela");
+    await page.getByLabel("Nome da empresa, CNPJ ou site").press("Enter");
     await expect(page.locator("p", { hasText: /^1\s+empresa/ })).toBeVisible();
     await expect(page.getByRole("link", { name: "Padaria Estrela" }).first()).toBeVisible();
 
@@ -35,11 +35,14 @@ test.describe("pesquisar empresas", () => {
     await expect(page.getByText("A base carregada ainda não tem MG")).toBeVisible();
   });
 
-  test("CNPJ digitado oferece abrir a ficha direto", async ({ page }) => {
+  test("CNPJ ou site digitados na caixa única abrem a empresa direto", async ({ page }) => {
     await page.goto("/pesquisar?nome=33.000.167%2F0001-01");
-    await expect(page.getByText("Isso parece um CNPJ")).toBeVisible();
-    await page.getByRole("link", { name: /Abrir 33\.000\.167/ }).click();
-    await expect(page).toHaveURL(/\/descobrir\?alvo=33000167000101/);
+    await expect(page).toHaveURL(/\/empresa\/33000167000101/);
+    await expect(page.getByRole("heading", { level: 2, name: "Empresa Demonstração" })).toBeVisible();
+    await page.goto("/pesquisar");
+    await page.getByLabel("Nome da empresa, CNPJ ou site").fill("https://www.Exemplo.com.br/contato");
+    await page.getByLabel("Nome da empresa, CNPJ ou site").press("Enter");
+    await expect(page).toHaveURL(/\/empresa\/site%3Aexemplo\.com\.br/);
   });
 
   test("sugere cidades ao digitar", async ({ page }) => {
@@ -52,8 +55,8 @@ test.describe("pesquisar empresas", () => {
 test.describe("descobrir, revelar, listas e exportação", () => {
   test("da pesquisa até o CSV", async ({ page }) => {
     await page.goto("/pesquisar?nome=estrela");
-    await page.getByRole("link", { name: "Ver decisores" }).first().click();
-    await expect(page).toHaveURL(/\/descobrir\?alvo=10000000000145/);
+    await page.getByRole("link", { name: "Abrir empresa" }).first().click();
+    await expect(page).toHaveURL(/\/empresa\/10000000000145/);
 
     // A ficha carrega sozinha ao vir de um link.
     await expect(page.getByRole("tab", { name: /Resumo/ })).toBeVisible();
@@ -82,7 +85,7 @@ test.describe("descobrir, revelar, listas e exportação", () => {
 test.describe("áreas internas", () => {
   for (const [caminho, titulo] of [
     ["/base", "Base comum"], ["/equipe", "Equipe"], ["/creditos", "Créditos"], ["/configuracoes", "Configurações"],
-    ["/admin", "Plataforma"], ["/admin/provedores", "Plataforma"], ["/admin/saude", "Plataforma"],
+    ["/empresas", "Minhas empresas"], ["/admin", "Plataforma"], ["/admin/provedores", "Plataforma"], ["/admin/saude", "Plataforma"],
   ]) {
     test(`${caminho} abre sem erro`, async ({ page }) => {
       const resposta = await page.goto(caminho);
@@ -125,7 +128,7 @@ test.describe("mercado", () => {
 
 test.describe("descobrir decisores: clareza de quem é cada pessoa e dado", () => {
   test("ficha mostra o CNPJ inteiro, pessoas dizem de qual empresa e de onde vêm, e custos aparecem", async ({ page }) => {
-    await page.goto("/descobrir?alvo=33000167000101");
+    await page.goto("/empresa/33000167000101");
     await expect(page.getByRole("heading", { level: 2, name: "Empresa Demonstração" })).toBeVisible();
     await expect(page.getByText("33.000.167/0001-01", { exact: true })).toBeVisible();
     // Se já houve busca recente, a ficha abre em "Pessoas"; o resumo está a um toque.
@@ -153,18 +156,20 @@ test.describe("descobrir decisores: clareza de quem é cada pessoa e dado", () =
     await expect(page.getByText("3 de 3 pessoas")).toBeVisible();
   });
 
-  test("abrir outra empresa não deixa pessoas da anterior na tela", async ({ page }) => {
-    await page.goto("/descobrir?alvo=33000167000101");
+  test("o que foi colhido fica na empresa: reabrir mostra as pessoas sem nova busca, e outra empresa não herda nada", async ({ page }) => {
+    await page.goto("/empresa/33000167000101");
     await page.getByRole("button", { name: /Buscar pessoas/ }).click();
     await expect(page.getByText(/Pessoas ligadas a/)).toBeVisible({ timeout: 20000 });
-    await page.getByPlaceholder(/00.000.000/).fill("11.222.333/0001-81");
-    await page.getByRole("button", { name: "Buscar empresa" }).click();
+    await page.goto("/empresa/11222333000181");
+    await expect(page.getByRole("heading", { level: 2 })).toBeVisible();
     await expect(page.getByText(/Pessoas ligadas a/)).toHaveCount(0);
-    await expect(page.getByText("11.222.333/0001-81", { exact: true })).toBeVisible();
+    await page.goto("/empresa/33000167000101");
+    await expect(page.getByText(/Pessoas ligadas a/)).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText("3 de 3 pessoas")).toBeVisible();
   });
 
   test("abas funcionam pelo teclado", async ({ page }) => {
-    await page.goto("/descobrir?alvo=33000167000101");
+    await page.goto("/empresa/33000167000101");
     await page.getByRole("tab", { name: "Resumo" }).focus();
     await page.keyboard.press("ArrowRight");
     await expect(page.getByRole("tab", { name: /Pessoas/ })).toHaveAttribute("aria-selected", "true");
@@ -175,7 +180,7 @@ test.describe("descobrir decisores: clareza de quem é cada pessoa e dado", () =
 
 test.describe("descobrir no celular @celular", () => {
   test("CNPJ não é cortado, abas cabem e o resultado aparece na tela após buscar", async ({ page }) => {
-    await page.goto("/descobrir?alvo=33000167000101");
+    await page.goto("/empresa/33000167000101");
     const cnpj = page.getByText("33.000.167/0001-01", { exact: true });
     await expect(cnpj).toBeVisible();
     const caixa = await cnpj.boundingBox();
@@ -187,5 +192,70 @@ test.describe("descobrir no celular @celular", () => {
     await page.getByRole("button", { name: /Buscar pessoas/ }).click();
     await expect(page.getByText(/Pessoas ligadas a/)).toBeInViewport({ timeout: 20000 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+});
+
+test.describe("pesquisa e empresa unificadas", () => {
+  test("o resultado abre a empresa na mesma área e o voltar devolve a mesma lista filtrada", async ({ page }) => {
+    await page.goto("/pesquisar?uf=RJ");
+    await expect(page.locator("p", { hasText: /^3\s+empresas/ })).toBeVisible();
+    await page.getByRole("link", { name: "Abrir empresa" }).first().click();
+    await expect(page).toHaveURL(/\/empresa\/\d{14}\?de=/);
+    await expect(page.getByRole("tab", { name: "Resumo" })).toBeVisible();
+    await page.getByRole("link", { name: /Voltar para os resultados/ }).click();
+    await expect(page).toHaveURL(/\/pesquisar\?uf=RJ/);
+    await expect(page.locator("p", { hasText: /^3\s+empresas/ })).toBeVisible();
+  });
+
+  test("links antigos de /descobrir continuam funcionando e o menu não tem mais Descobrir", async ({ page }) => {
+    await page.goto("/descobrir?alvo=33000167000101");
+    await expect(page).toHaveURL(/\/empresa\/33000167000101/);
+    await page.goto("/descobrir");
+    await expect(page).toHaveURL(/\/pesquisar/);
+    await expect(page.getByRole("navigation", { name: "Principal" }).getByRole("link", { name: "Descobrir" })).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Principal" }).getByRole("link", { name: "Minhas empresas" })).toBeVisible();
+  });
+
+  test("endereço de empresa inválido dá página não encontrada, e voltar nunca sai do aplicativo", async ({ page }) => {
+    await page.goto("/empresa/lixo");
+    await expect(page.getByRole("heading", { name: "Página não encontrada" })).toBeVisible();
+    await page.goto("/empresa/33000167000101?de=https%3A%2F%2Fmalicioso.example%2F");
+    await expect(page.getByRole("link", { name: /Voltar para a pesquisa/ })).toHaveAttribute("href", "/pesquisar");
+  });
+
+  test("minhas empresas junta o que foi colhido por empresa e leva à página dela", async ({ page }) => {
+    await page.goto("/empresa/33000167000101");
+    await page.getByRole("button", { name: /Buscar pessoas/ }).click();
+    await expect(page.getByText(/Pessoas ligadas a/)).toBeVisible({ timeout: 20000 });
+    await page.getByRole("button", { name: /Revelar e-mail/ }).first().click();
+    await expect(page.getByText(/@exemplo\.com\.br/).first()).toBeVisible();
+
+    await page.goto("/empresas");
+    const cartao = page.locator('a[href*="/empresa/33000167000101"]');
+    await expect(cartao).toBeVisible();
+    await expect(cartao.getByText("3 pessoas")).toBeVisible();
+    await expect(cartao.getByText(/1 e-mail revelado/)).toBeVisible();
+    await page.getByLabel("Filtrar minhas empresas").fill("zzz");
+    await page.getByRole("button", { name: "Filtrar" }).click();
+    await expect(page.getByText(/Nenhuma empresa combina/)).toBeVisible();
+    await page.getByRole("link", { name: "Limpar" }).click();
+    await page.locator('a[href*="/empresa/33000167000101"]').click();
+    await expect(page).toHaveURL(/\/empresa\/33000167000101\?de=%2Fempresas/);
+    await expect(page.getByText(/Pessoas ligadas a/)).toBeVisible({ timeout: 20000 });
+    await page.getByRole("link", { name: /Voltar para Minhas empresas/ }).click();
+    await expect(page).toHaveURL(/\/empresas/);
+  });
+});
+
+test.describe("unificado no celular @celular", () => {
+  test("atalhos trazem Pesquisar e Minhas empresas, e a caixa única cabe na tela", async ({ page }) => {
+    await page.goto("/pesquisar");
+    const atalhos = page.getByRole("navigation", { name: "Atalhos" });
+    await expect(atalhos.getByRole("link", { name: "Pesquisar" })).toBeVisible();
+    await expect(atalhos.getByRole("link", { name: "Empresas" })).toBeVisible();
+    await expect(page.getByLabel("Nome da empresa, CNPJ ou site")).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await atalhos.getByRole("link", { name: "Empresas" }).click();
+    await expect(page).toHaveURL(/\/empresas/);
   });
 });

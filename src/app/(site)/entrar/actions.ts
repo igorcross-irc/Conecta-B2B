@@ -5,7 +5,7 @@ import { getAuth } from "@/lib/auth/server";
 
 function destino(dados: FormData): string {
   const p = String(dados.get("proximo") ?? "");
-  return p.startsWith("/") && !p.startsWith("//") ? p : "/descobrir";
+  return p.startsWith("/") && !p.startsWith("//") ? p : "/pesquisar";
 }
 
 export interface EstadoForm {

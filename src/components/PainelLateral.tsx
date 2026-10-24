@@ -43,7 +43,7 @@ export function PainelLateral({
         <button onClick={() => setAberto(true)} aria-label="Abrir menu" aria-expanded={aberto} className="-ml-2 rounded-lg p-2 hover:bg-white/10">
           <IconeMenu width={24} height={24} />
         </button>
-        <Link href="/descobrir" aria-label="Conecta-B2B">{logo}</Link>
+        <Link href="/pesquisar" aria-label="Conecta-B2B">{logo}</Link>
         <Link href="/creditos" className="rounded-full bg-white/15 px-3 py-1 text-sm font-semibold">
           {saldo} créd.
         </Link>
