@@ -177,6 +177,11 @@ export async function rodarAlertasPublico() {
   return (await servicosPublicos()).rodarAlertas(enviarEmail, urlPublica());
 }
 
+/** Aviso por e-mail à operadora quando alguma fonte de dados cai (chamado pelo cron; destino em OPERADORA_EMAIL). */
+export async function avisarFontesPublico(para: string) {
+  return (await servicosPublicos()).avisarFontesForaDoAr(enviarEmail, para, urlPublica());
+}
+
 export async function confirmarOptOutPublico(token: string) {
   return (await servicosPublicos()).confirmarOptOut(token);
 }

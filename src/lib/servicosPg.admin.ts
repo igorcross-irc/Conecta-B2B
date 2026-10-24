@@ -1,3 +1,4 @@
+import { estadoDaFonte } from "./monitor";
 import { TABELA_CUSTOS_PADRAO, type TabelaCustos } from "./credits";
 import { ErroDeNegocio } from "./servicos";
 import { Linha, ResumoProvedor, UUID } from "./servicosPg.tipos";
@@ -69,6 +70,27 @@ export function criarAdmin(c: Ctx) {
       );
     },
     /** Saúde de cada fonte de dados: sucesso, tempo e último erro, nas últimas 24 h e 7 dias. */
+    /**
+     * Chamado pelo cron (não por pessoas): se alguma fonte ficou "fora do ar" nas últimas 24 h (com ao menos 5 chamadas),
+     * manda um resumo por e-mail para a operadora. Sem fontes fora, não manda nada.
+     */
+    async avisarFontesForaDoAr(enviar: (m: { para: string; assunto: string; texto: string }) => Promise<void>, para: string, urlBase: string) {
+      const r = await db.query<Linha>(
+        `select provedor, tipo, count(*)::int as n, count(*) filter (where not ok)::int as falhas,
+                (array_agg(erro order by criado_em desc) filter (where not ok))[1] as ultimo_erro
+           from provedor_execucao where criado_em > now() - interval '24 hours'
+          group by provedor, tipo order by provedor`,
+      );
+      const fora = r.rows.filter((x) => Number(x.n) >= 5 && estadoDaFonte(Number(x.n), Number(x.falhas)) === "fora");
+      if (fora.length === 0) return { foraDoAr: 0, enviado: false };
+      const linhas = fora.map((x) => `- ${x.provedor} (${x.tipo}): ${x.falhas} falhas em ${x.n} chamadas. Último erro: ${String(x.ultimo_erro ?? "sem mensagem").slice(0, 160)}`);
+      await enviar({
+        para,
+        assunto: `Conecta B2B: ${fora.length} fonte(s) de dados fora do ar`,
+        texto: `Nas últimas 24 horas, estas fontes falharam em mais de 30% das chamadas:\n\n${linhas.join("\n")}\n\nDetalhes: ${urlBase}/admin/provedores`,
+      });
+      return { foraDoAr: fora.length, enviado: true };
+    },
     async adminProvedores(): Promise<ResumoProvedor[]> {
       exigirOperadora();
       const r = await db.query<Linha>(

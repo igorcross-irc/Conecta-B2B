@@ -799,3 +799,27 @@ describe("perfil de cliente ideal e aderência", () => {
     expect(r.temPerfil).toBe(false);
   }, 30000);
 });
+
+describe("aviso de fonte fora do ar", () => {
+  it("só manda e-mail quando alguma fonte passa de 30% de falhas (com ao menos 5 chamadas)", async () => {
+    const { db, s } = await novo();
+    const enviados: { para: string; assunto: string; texto: string }[] = [];
+    const enviar = async (m: { para: string; assunto: string; texto: string }) => void enviados.push(m);
+    await db.query(
+      `insert into provedor_execucao (provedor, tipo, ok, ms, erro)
+       select 'FonteBoa', 'empresa', true, 100, null from generate_series(1, 10)`,
+    );
+    await db.query(
+      `insert into provedor_execucao (provedor, tipo, ok, ms, erro) select 'FonteRara', 'contatos', false, 100, 'x' from generate_series(1, 3)`,
+    );
+    expect(await s.avisarFontesForaDoAr(enviar, "op@exemplo.com", "https://app")).toEqual({ foraDoAr: 0, enviado: false });
+    expect(enviados).toHaveLength(0);
+    await db.query(
+      `insert into provedor_execucao (provedor, tipo, ok, ms, erro) select 'FonteRuim', 'contatos', false, 100, 'timeout' from generate_series(1, 6)`,
+    );
+    expect(await s.avisarFontesForaDoAr(enviar, "op@exemplo.com", "https://app")).toEqual({ foraDoAr: 1, enviado: true });
+    expect(enviados[0].para).toBe("op@exemplo.com");
+    expect(enviados[0].texto).toContain("FonteRuim");
+    expect(enviados[0].texto).not.toContain("FonteBoa");
+  }, 30000);
+});
