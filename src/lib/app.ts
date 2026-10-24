@@ -29,6 +29,8 @@ const banco$ = () => (g.__conectaBanco ??= abrirBanco());
  */
 function provedores() {
   if (process.env.CONECTA_MODO_DEMO === "1") {
+    // Dados fictícios em produção seriam cobrados e entregues como se fossem reais: recusa.
+    if (process.env.VERCEL_ENV === "production") throw new ErroDeNegocio("CONECTA_MODO_DEMO não pode ficar ligado em produção.", 500);
     return { empresa: new EmpresaDemo(), contatos: [new ProvedorDemo()] };
   }
   const site = new SiteEmpresa();

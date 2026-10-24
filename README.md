@@ -30,16 +30,17 @@ npm run build
 Abra http://localhost:3000. Telas: Descobrir (busca por CNPJ, decisores, revelação paga), Listas (com exportação CSV) e Créditos (saldo e extrato).
 
 ## O que já funciona
-- Consulta de empresa por CNPJ (API aberta da CNPJá), com validação dos dígitos verificadores.
-- Busca de decisores em cascata de provedores, com opt-out, sem repetir contatos e com origem e data em cada dado.
-- Créditos: cobrança idempotente, estorno automático quando a busca volta vazia, dado inexistente não cobra.
-- E-mail e telefone ocultos até a revelação; listas por referência; CSV só com o que foi revelado, protegido contra fórmula de planilha.
-- Esquema do banco (Supabase/Postgres) com segurança por linha, funções de cobrança e revelação, testado em Postgres embutido.
+O estado completo e atualizado está em `ESTADO.md`. Em resumo:
+- Busca de empresa por CNPJ ou site (BrasilAPI e CNPJá), ficha enriquecida e pesquisa avançada sobre a base da Receita (RJ), com filtros de setor, porte e tempo de abertura.
+- Busca de pessoas em cascata (QSA da Receita, site da empresa, Hunter, busca web), com opt-out, sem repetir contatos e com origem e data em cada dado.
+- Créditos com cobrança idempotente e estorno automático; e-mail e telefone ocultos até a revelação; listas e CSV protegido contra fórmula de planilha.
+- Login (Neon Auth), organizações, equipe e convites, painel da operadora, base comum, importação de CSV.
+- Opt-out público com confirmação por e-mail (Resend) e limite de pedidos contado no banco.
+- Papel de banco limitado `conecta_app`, para a segurança por linha valer de verdade (`docs/papel-de-banco.md`).
 
-## O que ainda é provisório
-- Com `DATABASE_URL` definida em `.env.local` (Neon ou outro Postgres), o app usa esse banco; sem ela, usa o Postgres local embutido. Na primeira conexão ele cria o usuário, a organização e os 20 créditos de demonstração (idempotente). Para usar o Neon: aplique `db/neon/0001_neon.sql` (já aplicado no projeto "Conecta B2B"), copie a URL do botão Connect do painel para `.env.local` e rode `npm run dev`.
-- **Login (Neon Auth):** defina `NEON_AUTH_BASE_URL` e `NEON_AUTH_COOKIE_SECRET` (gere com `openssl rand -base64 32`) no `.env.local`, além da `DATABASE_URL`. As páginas passam a exigir login (`/entrar`), cada usuário ganha uma organização com 20 créditos no primeiro acesso (`garantir_organizacao`) e as rotas `/api` devolvem 401 sem sessão. Sem essas variáveis o app roda em modo demonstração.
-- **Importar contatos** (CSV próprio, sem custo), **sinais de compra** por CNPJ, **opt-out público** em `/optout` (apaga e-mail e telefone guardados) e o script de cobertura: `npx tsx scripts/testar-provedores.ts entrada.csv` (modelo em `docs/modelo-cnpjs.csv`).
-- Os dados ficam, sem `DATABASE_URL`, num Postgres local embutido (PGlite, pasta `.dados`, ignorada pelo git), que roda a mesma migração do Supabase. Há uma só organização de demonstração e a aplicação roda como superusuário (a segurança por linha só vale com Supabase). Falta ligar ao Supabase (autenticação, organizações, papéis).
-- Os decisores vêm de um provedor de demonstração. Falta integrar provedores reais (ver `docs/custos-e-roteiro-de-teste.md`).
-- Sem login, painel da operadora, importação, sinais de compra nem configuração por tenant (esquema SQL já prevê).
+## Testes e CI
+`npm run typecheck`, `npm run lint`, `npm test`, `npm run test:papel` (serviços sob o papel limitado) e `npm run build`. O GitHub Actions
+roda tudo em PR e na `main` (`.github/workflows/ci.yml`). Depois de clonar rode `npx next typegen` antes do typecheck.
+
+## Variáveis de ambiente
+Veja `.env.example`. Sem `DATABASE_URL` o app usa um Postgres local embutido; sem `NEON_AUTH_BASE_URL` roda em modo demonstração.
