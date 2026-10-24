@@ -11,10 +11,10 @@ export default async function Pagina({ searchParams }: PageProps<"/descobrir">) 
   const sp = await searchParams;
   const alvo = typeof sp.alvo === "string" ? sp.alvo : typeof sp.cnpj === "string" ? sp.cnpj : "";
   const { servicos } = await contexto();
-  const recentes = await servicos.buscasRecentes(8);
+  const [recentes, custos] = await Promise.all([servicos.buscasRecentes(8), servicos.custos()]);
   return (
     <div className="space-y-6">
-      <Descobrir cnpjInicial={alvo} iaAtiva={Boolean(chaveGemini())} />
+      <Descobrir cnpjInicial={alvo} iaAtiva={Boolean(chaveGemini())} custos={{ busca: custos.busca_decisores, email: custos.revelar_email, telefone: custos.revelar_telefone }} />
       {recentes.length > 0 && (
         <section className="cartao">
           <h2 className="mb-2 font-medium">Buscas recentes da equipe</h2>

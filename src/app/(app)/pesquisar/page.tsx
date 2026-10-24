@@ -59,7 +59,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
   // Filtros ativos como chips: cada um leva à mesma pesquisa sem aquele filtro.
   const semEsse = (k: string, valor?: string) => {
     const q = new URLSearchParams();
-    for (const [c, val] of Object.entries(sp)) for (const x of Array.isArray(val) ? val : val === undefined ? [] : [val]) if (!(c === k && (valor === undefined || x === valor)) && c !== "pagina" && c !== "erro" && c !== "salva") q.append(c, x);
+    for (const [c, val] of Object.entries(sp)) for (const x of Array.isArray(val) ? val : val === undefined ? [] : [val]) if (!(c === k && (valor === undefined || x === valor)) && c !== "pagina" && c !== "erro" && c !== "salva" && c !== "aviso") q.append(c, x);
     return `/pesquisar${q.toString() ? `?${q}` : ""}`;
   };
   const chips: { rotulo: string; href: string }[] = [
@@ -121,6 +121,7 @@ export default async function Pesquisar({ searchParams }: PageProps<"/pesquisar"
         <section className="min-w-0 space-y-4" aria-live="polite">
           {erro && <p role="alert" className="aviso-erro">{erro}</p>}
           {salva && <p className="aviso-ok">Pesquisa salva.</p>}
+          {sp.aviso === "ia" && <p className="aviso-erro border-amber-200 bg-amber-50 text-amber-800">A IA está indisponível agora; busquei pelo nome. Use os filtros ao lado para refinar.</p>}
 
           {buscou && !r.baseReceita && (
             <p className="cartao border-amber-300 bg-amber-50 text-sm">

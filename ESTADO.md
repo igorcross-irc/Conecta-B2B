@@ -161,3 +161,17 @@ Tudo abaixo está testado (153 testes + 49 sob o papel limitado, typecheck, lint
 
 - **Tela Mercado** (`/mercado`): tamanho e distribuição do recorte escolhido (estado, cidade, setor, porte): total de matrizes ativas, % com e-mail/telefone cadastral, por setor, porte, cidade (15 maiores), estado, idade da empresa e aberturas por ano. Barras em CSS, clique leva à Pesquisa já filtrada. Sem filtro não calcula (varrer a base inteira não ajuda). Os filtros da pesquisa viraram `construirFiltro`, usado por `pesquisar` e `mercado`.
 - **Ideias seguintes** (não feitas): empresas parecidas com a lista de clientes, espaço livre contra o CRM, grupos por sócios (precisa da base de sócios), mapa de calor por bairro.
+
+## 24/10/2026 (noite, parte 4) — revisão dura de Descobrir e da ficha (PR #5)
+
+Críticas encontradas e o que foi feito:
+- **Sócio que é empresa aparecia como "pessoa"** (holding, fundo, S.A.). Agora fica só na aba Sócios, marcado "Empresa sócia", e não vira card de pessoa.
+- **Homônimos eram fundidos** (João Pedro Silva + João Paulo Silva). A união agora exige nomes do meio compatíveis (`mesmaPessoa`).
+- **Origem era texto técnico** ("BrasilAPI — QSA + Site x (página pública)"). Virou etiquetas ("Sócio na Receita Federal", "Publicado no site", "Citado em x.com", "Base comum", "E-mail adivinhado") com explicação (`src/lib/origem.ts`).
+- **Confiança era um % sem explicação.** Agora é Alta/Média/Baixa com "por quê?".
+- **E-mail adivinhado só era identificado depois de pagar para revelar.** Agora o status aparece antes do botão ("palpite, pode não existir").
+- **Custos escondidos:** botões mostram o custo (e-mail, telefone, busca) com o valor da organização.
+- **Não ficava claro de quem era cada pessoa:** cabeçalho "Pessoas ligadas a {empresa} · CNPJ"; os dados da Receita foram renomeados "Endereço e contato cadastrados na Receita" com aviso de que costumam ser da contabilidade.
+- **CNPJ cortado no celular**, nomes em MAIÚSCULAS, nome fantasia vazio, filtros ocupando a primeira tela, botão "Salvar todos" que salvava pessoas escondidas pelo filtro, respostas atrasadas de uma empresa anterior sobrescrevendo a nova, abas sem teclado.
+- **Testes duros:** 39 de unidade (tabela de homônimos, invariante aleatório com 200 rodadas, sócios PJ, origens, e-mails inferidos) e 5 e2e novos (desktop e celular).
+- **Não resolvido (decisão de produto):** a busca reaproveita contatos antigos mas cobra o mesmo crédito; a "base comum" mostra contatos trazidos por outros clientes (agora identificada, mas vale revisar a política de LGPD); contatos antigos guardados em MAIÚSCULAS só são formatados na exibição.

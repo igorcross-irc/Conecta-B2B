@@ -35,7 +35,7 @@ export interface RespostaBrasilApi {
   ddd_telefone_1?: string | null;
   ddd_telefone_2?: string | null;
   email?: string | null;
-  qsa?: { nome_socio?: string; qualificacao_socio?: string; data_entrada_sociedade?: string | null }[];
+  qsa?: { identificador_de_socio?: number; nome_socio?: string; qualificacao_socio?: string; data_entrada_sociedade?: string | null }[];
 }
 
 function telefone(v?: string | null): string[] {
@@ -89,7 +89,7 @@ export function mapearBrasilApi(r: RespostaBrasilApi, agora = new Date()): Empre
     dominio: dominioDoEmail(r.email),
     socios: (r.qsa ?? [])
       .filter((s) => s.nome_socio)
-      .map((s) => ({ nome: s.nome_socio!, qualificacao: s.qualificacao_socio ?? "", desde: s.data_entrada_sociedade || undefined })),
+      .map((s) => ({ nome: s.nome_socio!, qualificacao: s.qualificacao_socio ?? "", desde: s.data_entrada_sociedade || undefined, ...(s.identificador_de_socio === 1 ? { pessoaJuridica: true } : {}) })),
     fonte: "BrasilAPI (Receita Federal)",
     obtidoEm: agora.toISOString(),
     versao: VERSAO_EMPRESA,
