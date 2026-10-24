@@ -23,6 +23,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const itens: ItemMenu[] = [
     { href: "/pesquisar", rotulo: "Pesquisar", icone: "Busca", secao: "Prospecção" },
     { href: "/descobrir", rotulo: "Descobrir", icone: "Descobrir", secao: "Prospecção" },
+    { href: "/mercado", rotulo: "Mercado", icone: "Grafico", secao: "Prospecção" },
     { href: "/base", rotulo: "Base comum", icone: "Base", secao: "Prospecção" },
     { href: "/listas", rotulo: "Listas", icone: "Listas", secao: "Prospecção" },
     { href: "/importar", rotulo: "Importar", icone: "Importar", secao: "Prospecção" },

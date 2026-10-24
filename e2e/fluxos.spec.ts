@@ -110,3 +110,15 @@ test.describe("celular @celular", () => {
     await expect(page.getByRole("navigation", { name: "Principal" })).toBeVisible();
   });
 });
+
+test.describe("mercado", () => {
+  test("pede um recorte, mostra tamanho e distribuição e leva à pesquisa", async ({ page }) => {
+    await page.goto("/mercado");
+    await expect(page.getByText("Escolha um recorte para começar")).toBeVisible();
+    await page.goto("/mercado?uf=RJ");
+    await expect(page.getByText("empresas ativas (matrizes)")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Por setor" })).toBeVisible();
+    await page.getByRole("link", { name: /Ver estas empresas na Pesquisa/ }).click();
+    await expect(page).toHaveURL(/\/pesquisar\?uf=RJ/);
+  });
+});

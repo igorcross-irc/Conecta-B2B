@@ -4,8 +4,56 @@ import { UFS } from "./ufs";
 import { limparFiltros, paraParametros, resumoFiltros, type FiltrosUrl } from "./filtrosUrl";
 import { ABERTURAS, PORTES, SETORES, faixasDeSetores } from "./setores";
 import { ErroDeNegocio } from "./servicos";
-import { Linha, PesquisaFiltros, PesquisaSalva, ResultadoPesquisa, UUID } from "./servicosPg.tipos";
+import { Fatia, Linha, Mercado, PesquisaFiltros, PesquisaSalva, ResultadoPesquisa, UUID } from "./servicosPg.tipos";
 import type { Ctx } from "./servicosPg.contexto";
+
+/** Monta a cláusula WHERE (sobre rf_estabelecimento apelidada de `e`) e os parâmetros a partir dos filtros da pesquisa; null se não há nenhum filtro. */
+function construirFiltro(f: PesquisaFiltros) {
+    const nome = normalizarBusca(f.nome ?? "");
+    const termos = normalizarBusca(f.termos ?? "").split(" ").filter(Boolean).slice(0, 5);
+    const uf = (f.uf ?? "").trim().toUpperCase().slice(0, 2);
+    const cidade = normalizarBusca(f.cidade ?? "");
+    const bairro = normalizarBusca(f.bairro ?? "");
+    const segmento = normalizarBusca(f.segmento ?? "");
+    const todasMatrizes = f.incluirFiliais === true;
+    const setores = (f.setores ?? []).filter(Boolean);
+    const portes = (f.porte ?? []).filter((x) => (PORTES as readonly string[]).includes(x));
+    const abertura = ABERTURAS.find((a) => a.id === f.abertura);
+    const abertaDesde = /^\d{4}-\d{2}-\d{2}$/.test(f.abertaDesde ?? "") ? f.abertaDesde : undefined;
+    const temFiltro = abertaDesde || nome || termos.length || uf || cidade || bairro || segmento || setores.length || portes.length || abertura || f.comEmail || f.comTelefone;
+    if (!temFiltro) return null;
+
+    const where: string[] = ["e.situacao = 'ATIVA'"];
+    const p: unknown[] = [];
+    const add = (v: unknown) => (p.push(v), `$${p.length}`);
+    if (!todasMatrizes) where.push("e.matriz");
+    if (nome) where.push(`e.busca like '%' || ${add(nome)} || '%'`);
+    for (const t of termos) where.push(`e.busca like '%' || ${add(t)} || '%'`);
+    if (uf) where.push(`e.uf = ${add(uf)}`);
+    if (cidade) where.push(`lower(translate(e.municipio, 'ÁÀÂÃÉÊÍÓÔÕÚÇáàâãéêíóôõúç', 'AAAAEEIOOOUCaaaaeeiooouc')) like '%' || ${add(cidade)} || '%'`);
+    if (bairro) where.push(`lower(translate(e.bairro, 'ÁÀÂÃÉÊÍÓÔÕÚÇáàâãéêíóôõúç', 'AAAAEEIOOOUCaaaaeeiooouc')) like '%' || ${add(bairro)} || '%'`);
+    if (segmento) {
+      const codigo = segmento.replace(/\D/g, "");
+      where.push(
+        codigo.length >= 4
+          ? `e.cnae::text like ${add(codigo + "%")}`
+          : `e.cnae in (select codigo from rf_cnae where busca like '%' || ${add(segmento)} || '%')`,
+      );
+    }
+    const faixas = faixasDeSetores(setores);
+    if (setores.length) {
+      where.push(`(${faixas.map(([a, b]) => `e.cnae between ${a} and ${b}`).join(" or ") || "false"})`);
+    }
+    if (portes.length) where.push(`e.porte = any(${add(portes)}::text[])`);
+    if (abertaDesde) where.push(`e.aberta_em >= ${add(abertaDesde)}::date`);
+    if (abertura) {
+      where.push(`e.aberta_em <= current_date - make_interval(years => ${Math.floor(abertura.deAnos)})`);
+      if (abertura.ateAnos < 100) where.push(`e.aberta_em > current_date - make_interval(years => ${Math.floor(abertura.ateAnos)})`);
+    }
+    if (f.comEmail) where.push("e.email is not null");
+    if (f.comTelefone) where.push("e.telefone is not null");
+    return { w: where.join(" and "), p, add, nome, termos };
+}
 
 /** Serviços do grupo "pesquisa". */
 export function criarPesquisa(c: Ctx) {
@@ -16,53 +64,12 @@ export function criarPesquisa(c: Ctx) {
      * e nas empresas/sites já conhecidos. A resposta lista CNPJs e sites que combinam com o termo.
      */
     async pesquisar(f: PesquisaFiltros = {}): Promise<ResultadoPesquisa> {
-      const nome = normalizarBusca(f.nome ?? "");
-      const termos = normalizarBusca(f.termos ?? "").split(" ").filter(Boolean).slice(0, 5);
-      const uf = (f.uf ?? "").trim().toUpperCase().slice(0, 2);
-      const cidade = normalizarBusca(f.cidade ?? "");
-      const bairro = normalizarBusca(f.bairro ?? "");
-      const segmento = normalizarBusca(f.segmento ?? "");
-      const todasMatrizes = f.incluirFiliais === true;
       const pagina = Math.max(0, Math.floor(f.pagina ?? 0));
       // Tela: 25 por página. Exportação: até 5.000 de uma vez (o valor entra no SQL, por isso só inteiro dentro do limite).
       const porPagina = Math.min(5000, Math.max(1, Math.floor(f.porPagina ?? 25)));
-      const setores = (f.setores ?? []).filter(Boolean);
-      const portes = (f.porte ?? []).filter((x) => (PORTES as readonly string[]).includes(x));
-      const abertura = ABERTURAS.find((a) => a.id === f.abertura);
-      const abertaDesde = /^\d{4}-\d{2}-\d{2}$/.test(f.abertaDesde ?? "") ? f.abertaDesde : undefined;
-      const temFiltro = abertaDesde || nome || termos.length || uf || cidade || bairro || segmento || setores.length || portes.length || abertura || f.comEmail || f.comTelefone;
-      if (!temFiltro) return { itens: [], total: 0, baseReceita: await temBaseReceita(), sites: [] };
-
-      const where: string[] = ["e.situacao = 'ATIVA'"];
-      const p: unknown[] = [];
-      const add = (v: unknown) => (p.push(v), `$${p.length}`);
-      if (!todasMatrizes) where.push("e.matriz");
-      if (nome) where.push(`e.busca like '%' || ${add(nome)} || '%'`);
-      for (const t of termos) where.push(`e.busca like '%' || ${add(t)} || '%'`);
-      if (uf) where.push(`e.uf = ${add(uf)}`);
-      if (cidade) where.push(`lower(translate(e.municipio, 'ÁÀÂÃÉÊÍÓÔÕÚÇáàâãéêíóôõúç', 'AAAAEEIOOOUCaaaaeeiooouc')) like '%' || ${add(cidade)} || '%'`);
-      if (bairro) where.push(`lower(translate(e.bairro, 'ÁÀÂÃÉÊÍÓÔÕÚÇáàâãéêíóôõúç', 'AAAAEEIOOOUCaaaaeeiooouc')) like '%' || ${add(bairro)} || '%'`);
-      if (segmento) {
-        const codigo = segmento.replace(/\D/g, "");
-        where.push(
-          codigo.length >= 4
-            ? `e.cnae::text like ${add(codigo + "%")}`
-            : `e.cnae in (select codigo from rf_cnae where busca like '%' || ${add(segmento)} || '%')`,
-        );
-      }
-      const faixas = faixasDeSetores(setores);
-      if (setores.length) {
-        where.push(`(${faixas.map(([a, b]) => `e.cnae between ${a} and ${b}`).join(" or ") || "false"})`);
-      }
-      if (portes.length) where.push(`e.porte = any(${add(portes)}::text[])`);
-      if (abertaDesde) where.push(`e.aberta_em >= ${add(abertaDesde)}::date`);
-      if (abertura) {
-        where.push(`e.aberta_em <= current_date - make_interval(years => ${Math.floor(abertura.deAnos)})`);
-        if (abertura.ateAnos < 100) where.push(`e.aberta_em > current_date - make_interval(years => ${Math.floor(abertura.ateAnos)})`);
-      }
-      if (f.comEmail) where.push("e.email is not null");
-      if (f.comTelefone) where.push("e.telefone is not null");
-      const w = where.join(" and ");
+      const filtro = construirFiltro(f);
+      if (!filtro) return { itens: [], total: 0, baseReceita: await temBaseReceita(), sites: [] };
+      const { w, p, add, nome, termos } = filtro;
       // Aderência ao perfil de cliente ideal: a nota sai do SQL (para ordenar a pesquisa inteira) e os motivos, do TypeScript.
       const perfil = f.aderencia || f.ordem === "aderencia" ? await servicos.perfilIdeal() : undefined;
       const exprAderencia = perfil ? sqlAderencia(perfil, add) : null;
@@ -117,6 +124,55 @@ export function criarPesquisa(c: Ctx) {
           temTelefone: x.tem_telefone === true,
           matriz: x.matriz === true,
         })),
+      };
+    },
+    /**
+     * Tamanho do mercado: quantas empresas combinam com os filtros e como se distribuem por setor, porte, estado, cidade,
+     * idade e ano de abertura. Mesmos filtros da pesquisa; sem nenhum filtro devolve null (varrer a base inteira não ajuda).
+     */
+    async mercado(f: PesquisaFiltros = {}): Promise<Mercado | null> {
+      const filtro = construirFiltro({ ...f, ordem: undefined });
+      if (!filtro) return null;
+      const { w, p } = filtro;
+      const agrupar = async (expr: string, limite = 50) =>
+        (await db.query<Linha>(`select ${expr} as chave, count(*)::int as n from rf_estabelecimento e where ${w} group by 1 order by n desc limit ${limite}`, p)).rows;
+      const [setor, porte, uf, municipio, idade, anos, totais] = await Promise.all([
+        agrupar("(e.cnae / 100000)", 100),
+        agrupar("coalesce(e.porte, 'Não informado')"),
+        agrupar("e.uf", 30),
+        agrupar("e.uf || ' · ' || e.municipio", 15),
+        agrupar(`case when e.aberta_em is null then 'Sem data'
+                      when e.aberta_em > current_date - interval '1 year' then '0 Menos de 1 ano'
+                      when e.aberta_em > current_date - interval '3 years' then '1 De 1 a 3 anos'
+                      when e.aberta_em > current_date - interval '5 years' then '2 De 3 a 5 anos'
+                      when e.aberta_em > current_date - interval '10 years' then '3 De 5 a 10 anos'
+                      when e.aberta_em > current_date - interval '20 years' then '4 De 10 a 20 anos'
+                      else '5 Mais de 20 anos' end`),
+        (await db.query<Linha>(
+          `select extract(year from e.aberta_em)::int as chave, count(*)::int as n from rf_estabelecimento e
+            where ${w} and e.aberta_em >= date_trunc('year', current_date) - interval '9 years' group by 1 order by 1`, p)).rows,
+        um<{ n: number; email: number; tel: number }>(
+          `select count(*)::int as n, count(*) filter (where e.email is not null)::int as email, count(*) filter (where e.telefone is not null)::int as tel
+             from rf_estabelecimento e where ${w}`, p),
+      ]);
+      const fatia = (r: Linha, rotulo: string): Fatia => ({ rotulo, chave: String(r.chave), empresas: Number(r.n) });
+      const porSetor = SETORES.map((s) => ({
+        rotulo: s.nome, chave: s.id,
+        empresas: setor.filter((x) => s.divisoes.includes(Number(x.chave))).reduce((t, x) => t + Number(x.n), 0),
+      }));
+      const classificados = porSetor.reduce((t, x) => t + x.empresas, 0);
+      const total = totais?.n ?? 0;
+      return {
+        total,
+        porSetor: [...porSetor, { rotulo: "Outros", chave: "outros", empresas: total - classificados }].filter((x) => x.empresas > 0).sort((a, b) => b.empresas - a.empresas),
+        porPorte: porte.map((x) => fatia(x, String(x.chave))),
+        porUf: uf.map((x) => fatia(x, String(x.chave))),
+        porMunicipio: municipio.map((x) => fatia(x, String(x.chave))),
+        porIdade: idade.map((x) => fatia(x, String(x.chave).replace(/^\d /, ""))).sort((a, b) => a.chave.localeCompare(b.chave)),
+        aberturasPorAno: anos.map((x) => fatia(x, String(x.chave))),
+        comEmail: totais?.email ?? 0,
+        comTelefone: totais?.tel ?? 0,
+        baseReceita: await temBaseReceita(),
       };
     },
     /** Perfil de cliente ideal da organização (vazio se ainda não foi definido). */

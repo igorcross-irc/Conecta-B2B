@@ -156,3 +156,8 @@ Tudo abaixo está testado (153 testes + 49 sob o papel limitado, typecheck, lint
 - **Aviso de fonte fora do ar** (`/api/cron/fontes`, todo dia 12:00 UTC): se alguma fonte falhar em mais de 30% das chamadas nas últimas 24 h (mínimo 5), manda e-mail à operadora. Precisa de `OPERADORA_EMAIL`, `CRON_SECRET` e Resend configurados.
 - **Descobrir no celular:** ao concluir a busca, a tela rola até as pessoas; aba "Informações extras" virou "Extras" para as quatro caberem.
 - **Ainda não feito (depende de decisão do Igor):** botão de importação sob demanda (precisa de token do GitHub), importação mensal agendada (definir quais estados).
+
+## 24/10/2026 (noite, parte 2) — Mercado (branch `claude/mercado-visoes`, empilhada na #2)
+
+- **Tela Mercado** (`/mercado`): tamanho e distribuição do recorte escolhido (estado, cidade, setor, porte): total de matrizes ativas, % com e-mail/telefone cadastral, por setor, porte, cidade (15 maiores), estado, idade da empresa e aberturas por ano. Barras em CSS, clique leva à Pesquisa já filtrada. Sem filtro não calcula (varrer a base inteira não ajuda). Os filtros da pesquisa viraram `construirFiltro`, usado por `pesquisar` e `mercado`.
+- **Ideias seguintes** (não feitas): empresas parecidas com a lista de clientes, espaço livre contra o CRM, grupos por sócios (precisa da base de sócios), mapa de calor por bairro.

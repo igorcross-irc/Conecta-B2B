@@ -823,3 +823,29 @@ describe("aviso de fonte fora do ar", () => {
     expect(enviados[0].texto).not.toContain("FonteBoa");
   }, 30000);
 });
+
+describe("mercado (tamanho e visões)", () => {
+  it("agrega por setor, porte, UF, cidade, idade e ano, com os mesmos filtros da pesquisa", async () => {
+    const { db, s } = await novo();
+    expect(await s.mercado({})).toBeNull();
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, matriz, situacao, cnae, uf, municipio, porte, aberta_em, email, telefone, busca) values
+       ('33000167000101','A',true,'ATIVA',1091102,'RJ','NITEROI','Micro empresa','2015-01-01','a@a.com','21999999999','a'),
+       ('11222333000181','B',true,'ATIVA',1091102,'RJ','NITEROI','Demais','2025-12-01',null,null,'b'),
+       ('00000000000191','C',true,'ATIVA',4711301,'SP','SAO PAULO','Micro empresa','2000-05-05',null,'1133334444','c'),
+       ('11111111000191','D',false,'ATIVA',4711301,'SP','SAO PAULO','Micro empresa','2000-05-05',null,null,'d')`,
+    );
+    const todos = (await s.mercado({ abertaDesde: "1990-01-01" }))!;
+    expect(todos.total).toBe(3); // a filial D fica de fora
+    expect(todos.porUf).toEqual([{ rotulo: "RJ", chave: "RJ", empresas: 2 }, { rotulo: "SP", chave: "SP", empresas: 1 }]);
+    expect(todos.porSetor.map((x) => [x.chave, x.empresas])).toEqual([["alimentos", 2], ["varejo", 1]]);
+    expect(todos.porPorte.find((x) => x.chave === "Micro empresa")?.empresas).toBe(2);
+    expect(todos.porMunicipio[0]).toMatchObject({ rotulo: "RJ · NITEROI", empresas: 2 });
+    expect(todos.porIdade.map((x) => x.rotulo)).toContain("Mais de 20 anos");
+    expect(todos.comEmail).toBe(1);
+    expect(todos.comTelefone).toBe(2);
+    const rj = (await s.mercado({ uf: "RJ" }))!;
+    expect(rj.total).toBe(2);
+    expect(rj.porSetor).toHaveLength(1);
+  }, 30000);
+});
