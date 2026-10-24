@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { contexto } from "@/lib/app";
+import { consultaPermitida, contexto } from "@/lib/app";
+import { LimiteDeConsultas } from "@/components/LimiteDeConsultas";
 import { paraParametros } from "@/lib/filtrosUrl";
 import { ABERTURAS, PORTES, SETORES } from "@/lib/setores";
 import { UFS } from "@/lib/ufs";
@@ -51,6 +52,7 @@ function Barras({ titulo, itens, total, href }: { titulo: string; itens: Fatia[]
 
 export default async function Mercado({ searchParams }: PageProps<"/mercado">) {
   await connection();
+  if (!(await consultaPermitida())) return <LimiteDeConsultas />;
   const sp = await searchParams;
   const f = {
     uf: texto(sp, "uf").toUpperCase().slice(0, 2),

@@ -5,6 +5,7 @@ import { ProvedorDemo } from "./providers/mock";
 import type { Empresa, ProvedorEmpresa } from "./providers/types";
 import { ErroDeNegocio } from "./servicos";
 import { criarServicosPg } from "./servicosPg";
+import { LIMITE_CONTAGEM } from "./servicosPg.pesquisa";
 import type { Db } from "@/db/conexao";
 import type { PGlite } from "@electric-sql/pglite";
 
@@ -941,4 +942,57 @@ describe("minhas empresas (consolidado por empresa)", () => {
     expect(await s.contatosDaEmpresa("site:sem-ninguem.com.br")).toEqual([]);
     await expect(s.contatosDaEmpresa("abc")).rejects.toThrow();
   }, 30000);
+});
+
+describe("pesquisa por palavras e contagem limitada", () => {
+  const nomes = async (s: Awaited<ReturnType<typeof novo>>["s"], f: Parameters<Awaited<ReturnType<typeof novo>>["s"]["pesquisar"]>[0]) => (await s.pesquisar(f)).itens.map((i) => i.razaoSocial).sort();
+
+  it("cada palavra vale como início de palavra do nome, em qualquer ordem, sem acento e sem diferenciar maiúsculas", async () => {
+    const { db, s } = await novo();
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, nome_fantasia, matriz, situacao, cnae, uf, municipio, busca) values
+       ('33000167000101','PADARIA ESTRELA DO SUL LTDA','Estrela',true,'ATIVA',1091101,'RJ','NITEROI','padaria estrela do sul ltda estrela'),
+       ('11222333000181','ESTRELADA ALIMENTOS SA',null,true,'ATIVA',1091101,'RJ','NITEROI','estrelada alimentos sa'),
+       ('00000000000191','CASA DA ESTRELA PADARIA',null,true,'ATIVA',1091101,'SP','SAO PAULO','casa da estrela padaria'),
+       ('11111111000191','MERCADO CENTRAL ME',null,true,'ATIVA',4711301,'RJ','NITEROI','mercado central me'),
+       ('22222222000191','LANCHES 3M LTDA',null,true,'ATIVA',5611201,'RJ','NITEROI','lanches 3m ltda')`,
+    );
+    expect(await nomes(s, { nome: "estrela" })).toEqual(["CASA DA ESTRELA PADARIA", "ESTRELADA ALIMENTOS SA", "PADARIA ESTRELA DO SUL LTDA"]); // início de palavra: "estrelada" também começa por "estrela"
+    expect(await nomes(s, { nome: "estrel" })).toHaveLength(3);
+    expect(await nomes(s, { nome: "strela" })).toEqual([]); // meio de palavra não vale
+    expect(await nomes(s, { nome: "ESTRELA padaria" })).toEqual(["CASA DA ESTRELA PADARIA", "PADARIA ESTRELA DO SUL LTDA"]);
+    expect(await nomes(s, { nome: "padaria estrela", uf: "SP" })).toEqual(["CASA DA ESTRELA PADARIA"]);
+    expect(await nomes(s, { termos: "padaria", nome: "estrela" })).toHaveLength(2); // nome + palavras-chave somam
+    expect(await nomes(s, { nome: "3m" })).toEqual(["LANCHES 3M LTDA"]);
+    expect(await nomes(s, { nome: "padaria zzz" })).toEqual([]);
+  }, 30000);
+
+  it("texto hostil ou estranho não quebra a consulta nem vaza resultados", async () => {
+    const { db, s } = await novo();
+    await db.query(`insert into rf_estabelecimento (cnpj, razao_social, matriz, situacao, cnae, uf, municipio, busca) values ('33000167000101','O BRIEN LTDA',true,'ATIVA',1091101,'RJ','NITEROI','o brien ltda')`);
+    for (const t of ["o'brien", "a & b | !c", "(x) <-> y", "estrela:*", "'; drop table contato; --", "\\", "%%%", "ñ ç é", "   ", ":", "&&&", "a".repeat(500)]) {
+      await expect(s.pesquisar({ nome: t, uf: "RJ" }), `entrada: ${t}`).resolves.toBeDefined();
+    }
+    expect(await nomes(s, { nome: "o'brien" })).toEqual(["O BRIEN LTDA"]);
+    expect(await nomes(s, { nome: "  BRIEN  &  ltda " })).toEqual(["O BRIEN LTDA"]);
+    expect((await db.query("select count(*)::int as n from contato")).rows[0]).toEqual({ n: 0 });
+  }, 30000);
+
+  it("a contagem para em 10.000 e informa 'mais de', sem perder a paginação", async () => {
+    const { db, s } = await novo();
+    await db.query(
+      `insert into rf_estabelecimento (cnpj, razao_social, matriz, situacao, cnae, uf, municipio, busca)
+       select lpad(g::text, 14, '0'), 'EMPRESA ' || lpad(g::text, 6, '0'), true, 'ATIVA', 1091101, 'RJ', 'NITEROI', 'empresa ' || lpad(g::text, 6, '0') from generate_series(1, 10050) g`,
+    );
+    const r = await s.pesquisar({ uf: "RJ" });
+    expect(r.total).toBe(LIMITE_CONTAGEM);
+    expect(r.totalAproximado).toBe(true);
+    expect(r.itens).toHaveLength(25);
+    const meio = await s.pesquisar({ uf: "RJ", pagina: 399 });
+    expect(meio.itens).toHaveLength(25);
+    const exato = await s.pesquisar({ uf: "RJ", nome: "empresa 00001" });
+    expect(exato.totalAproximado).toBeUndefined();
+    expect(exato.total).toBeGreaterThan(0);
+    expect(exato.total).toBeLessThan(LIMITE_CONTAGEM);
+  }, 60000);
 });

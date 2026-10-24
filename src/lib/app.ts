@@ -119,6 +119,15 @@ function servicosPublicos() {
   return banco$().then((banco) => criarServicosPg({ db: banco.comUsuario(ZERO), org: ZERO, ...provedores() }));
 }
 
+/**
+ * Cota de consultas pesadas (pesquisa, mercado, parecidas) por usuário: 600 por hora, contada no banco.
+ * Serve de freio contra uso em laço, que varreria a base da Receita sem parar.
+ */
+export async function consultaPermitida(): Promise<boolean> {
+  const { sessao, servicos } = await contexto();
+  return servicos.permitirPedido(`consulta:${sessao.usuarioId}`, 600, 3600);
+}
+
 /** Limite de pedidos para rotas públicas, contado no banco (vale em todos os servidores). */
 export async function permitirPedidoPublico(chave: string, maximo: number, janelaSegundos: number) {
   return (await servicosPublicos()).permitirPedido(chave, maximo, janelaSegundos);

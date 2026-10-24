@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { contexto } from "@/lib/app";
+import { consultaPermitida, contexto } from "@/lib/app";
+import { LimiteDeConsultas } from "@/components/LimiteDeConsultas";
 import { Predio } from "@/components/Icones";
 
 export const metadata = { title: "Empresas parecidas" };
@@ -9,6 +10,7 @@ const fmt = (c: string) => c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$
 
 export default async function Parecidas({ searchParams }: PageProps<"/parecidas">) {
   await connection();
+  if (!(await consultaPermitida())) return <LimiteDeConsultas />;
   const sp = await searchParams;
   const cnpj = (typeof sp.cnpj === "string" ? sp.cnpj : "").replace(/\D/g, "");
   const { servicos } = await contexto();
